@@ -2,6 +2,9 @@
   --header-bg: #8cbff0;
   --header-yellow: #fbf3d1;
   --header-yellow-muted: rgba(251, 243, 209, 0.78);
+  --header-mobile-height: 62px;
+  --header-top-offset: calc(var(--notice-bar-height, 0px) + var(--header-mobile-height));
+  --mobile-menu-top: calc(var(--header-top-offset) + var(--admin-bar-height, 0px));
 
   position: sticky;
   top: 0;
@@ -10,8 +13,29 @@
   color: var(--header-yellow);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
 
+  /* Тоненька верхня смужка з тлом як у body */
+  &__notice {
+    background-color: var(--body-bg, #ffffff);
+    color: var(--body-color, #1e293b);
+    border-bottom: 1px solid rgba(30, 41, 59, 0.08);
+    font-size: 11px;
+    line-height: 1.25;
+    letter-spacing: 0.02em;
+  }
+
+  &__notice-inner {
+    min-height: 24px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-weight: 500;
+  }
+
   &__inner {
-    height: 62px;
+    height: var(--header-mobile-height);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -67,7 +91,7 @@
     align-items: center;
     color: var(--header-yellow);
     z-index: 110;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
 
     &:hover {
       opacity: 0.9;
@@ -75,6 +99,14 @@
 
     @media (min-width: 1024px) {
       order: 2;
+    }
+  }
+
+  &.is-menu-open &__logo {
+    @media (max-width: 1023px) {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
     }
   }
 
@@ -90,11 +122,11 @@
   /* Навігація */
   &__nav {
     position: fixed;
-    top: 62px;
+    top: var(--mobile-menu-top);
     left: 0;
     width: 82%;
     max-width: 340px;
-    height: calc(100svh - 62px);
+    height: calc(100svh - var(--mobile-menu-top));
     background-color: var(--header-bg);
     border-right: 1px solid rgba(251, 243, 209, 0.25);
     padding: 24px 20px;
@@ -268,7 +300,7 @@
   /* Затемнення фону */
   &__backdrop {
     position: fixed;
-    inset: 62px 0 0 0;
+    inset: var(--mobile-menu-top) 0 0 0;
     background-color: rgba(0, 0, 0, 0.35);
     z-index: 101;
 

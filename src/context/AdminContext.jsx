@@ -51,8 +51,10 @@ const defaultManufacturers = {
   },
 };
 
-const defaultBanner = {
-  image: 'https://images.unsplash.com/photo-1543163521-1bf539c55dd2?auto=format&fit=crop&w=1400&q=80',
+const defaultHeroData = {
+  slides: [
+    'https://images.unsplash.com/photo-1543163521-1bf539c55dd2?auto=format&fit=crop&w=1400&q=80',
+  ],
   title: {
     ua: 'Нова колекція DiM47',
     en: 'New DiM47 Collection',
@@ -61,6 +63,16 @@ const defaultBanner = {
     ua: 'Анатомічне взуття ручної роботи з натуральної шкіри та замші',
     en: 'Handcrafted anatomical footwear made of genuine leather and suede',
   },
+};
+
+const safeSetStorage = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    console.warn(`Failed to save "${key}" to localStorage:`, err);
+    return false;
+  }
 };
 
 export function AdminProvider({ children }) {
@@ -94,38 +106,75 @@ export function AdminProvider({ children }) {
       soleId: 'sole_m1_1',
       gallery: p.gallery || [p.image],
       availableMaterials: ['leather', 'suede'],
-      availableLinings: ['fleece', 'fur'], // 'fleece' = байка, 'fur' = хутро
+      availableLinings: ['fleece', 'fur'],
       isBlocked: false,
       blockedSizes: [],
       blockedColorIds: [],
     }));
   });
 
-  const [banner, setBanner] = useState(() => {
+  const [heroData, setHeroData] = useState(() => {
     try {
-      const saved = localStorage.getItem('dim47_banner');
-      if (saved) return JSON.parse(saved);
+      const savedHero = localStorage.getItem('dim47_hero_data');
+      if (savedHero) {
+        const parsed = JSON.parse(savedHero);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            slides: Array.isArray(parsed.slides) ? parsed.slides : defaultHeroData.slides,
+            title: {
+              ua: parsed.title?.ua ?? defaultHeroData.title.ua,
+              en: parsed.title?.en ?? defaultHeroData.title.en,
+            },
+            subtitle: {
+              ua: parsed.subtitle?.ua ?? defaultHeroData.subtitle.ua,
+              en: parsed.subtitle?.en ?? defaultHeroData.subtitle.en,
+            },
+          };
+        }
+      }
+
+      const savedLegacyBanner = localStorage.getItem('dim47_banner');
+      if (savedLegacyBanner) {
+        const legacy = JSON.parse(savedLegacyBanner);
+        return {
+          slides: legacy?.image ? [legacy.image] : defaultHeroData.slides,
+          title: {
+            ua: legacy?.title?.ua ?? defaultHeroData.title.ua,
+            en: legacy?.title?.en ?? defaultHeroData.title.en,
+          },
+          subtitle: {
+            ua: legacy?.subtitle?.ua ?? defaultHeroData.subtitle.ua,
+            en: legacy?.subtitle?.en ?? defaultHeroData.subtitle.en,
+          },
+        };
+      }
     } catch {
-      localStorage.removeItem('dim47_banner');
+      localStorage.removeItem('dim47_hero_data');
     }
-    return defaultBanner;
+    return defaultHeroData;
   });
 
   useEffect(() => {
-    localStorage.setItem('dim47_is_admin', isAdmin);
+    safeSetStorage('dim47_is_admin', String(isAdmin));
   }, [isAdmin]);
 
   useEffect(() => {
-    localStorage.setItem('dim47_manufacturers', JSON.stringify(manufacturers));
+    safeSetStorage('dim47_manufacturers', JSON.stringify(manufacturers));
   }, [manufacturers]);
 
   useEffect(() => {
-    localStorage.setItem('dim47_products', JSON.stringify(items));
+    safeSetStorage('dim47_products', JSON.stringify(items));
   }, [items]);
 
   useEffect(() => {
-    localStorage.setItem('dim47_banner', JSON.stringify(banner));
-  }, [banner]);
+    safeSetStorage('dim47_hero_data', JSON.stringify(heroData));
+    const legacyBanner = {
+      image: heroData.slides?.[0] || '',
+      title: heroData.title,
+      subtitle: heroData.subtitle,
+    };
+    safeSetStorage('dim47_banner', JSON.stringify(legacyBanner));
+  }, [heroData]);
 
   const login = (pin) => {
     if (pin === ADMIN_PIN) {
@@ -336,8 +385,57 @@ export function AdminProvider({ children }) {
     });
   };
 
+  const addHeroSlides = (newSlides) => {
+    const validSlides = Array.isArray(newSlides) ? newSlides.filter(Boolean) : [];
+    if (!validSlides.length) return;
+    setHeroData((prev) => ({
+      ...prev,
+      slides: [...(prev.slides || []), ...validSlides],
+    }));
+  };
+
+  const removeHeroSlide = (indexToRemove) => {
+    setHeroData((prev) => {
+      const current = prev.slides || [];
+      if (current.length <= 1) return prev;
+      return {
+        ...prev,
+        slides: current.filter((_, idx) => idx !== indexToRemove),
+      };
+    });
+  };
+
+  const updateHeroTexts = ({ title, subtitle }) => {
+    setHeroData((prev) => ({
+      ...prev,
+      title: {
+        ua: title?.ua ?? prev.title?.ua ?? '',
+        en: title?.en ?? prev.title?.en ?? '',
+      },
+      subtitle: {
+        ua: subtitle?.ua ?? prev.subtitle?.ua ?? '',
+        en: subtitle?.en ?? prev.subtitle?.en ?? '',
+      },
+    }));
+  };
+
   const updateBanner = (newBannerData) => {
-    setBanner((prev) => ({ ...prev, ...newBannerData }));
+    setHeroData((prev) => ({
+      ...prev,
+      slides: newBannerData.image
+        ? [newBannerData.image, ...(prev.slides || []).slice(1)]
+        : prev.slides,
+      title: newBannerData.title ? { ...prev.title, ...newBannerData.title } : prev.title,
+      subtitle: newBannerData.subtitle
+        ? { ...prev.subtitle, ...newBannerData.subtitle }
+        : prev.subtitle,
+    }));
+  };
+
+  const banner = {
+    image: heroData.slides?.[0] || '',
+    title: heroData.title,
+    subtitle: heroData.subtitle,
   };
 
   return (
@@ -362,6 +460,10 @@ export function AdminProvider({ children }) {
         toggleBlockProduct,
         toggleBlockSize,
         toggleProductColorBlock,
+        heroData,
+        addHeroSlides,
+        removeHeroSlide,
+        updateHeroTexts,
         banner,
         updateBanner,
       }}

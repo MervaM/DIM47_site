@@ -2,22 +2,32 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAdmin } from '../../context/AdminContext';
+import { useCart } from '../../context/CartContext';
 import './Product.scss';
 
-const compressImageFile = (file) =>
+const MATERIAL_LABELS = {
+  leather: { ua: 'Шкіра', en: 'Leather' },
+  suede: { ua: 'Замша', en: 'Suede' },
+};
+
+const LINING_LABELS = {
+  fleece: { ua: 'Байка', en: 'Fleece' },
+  fur: { ua: 'Хутро', en: 'Fur' },
+};
+
+const compressImageFile = (file, maxWidth = 800, quality = 0.82) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        const maxWidth = 800;
         const scale = img.width > maxWidth ? maxWidth / img.width : 1;
         const canvas = document.createElement('canvas');
-        canvas.width = img.width * scale;
-        canvas.height = img.height * scale;
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.82));
+        resolve(canvas.toDataURL('image/jpeg', quality));
       };
       img.onerror = reject;
       img.src = event.target.result;
@@ -39,17 +49,20 @@ export default function Product() {
     toggleProductColorBlock,
     updateProduct,
   } = useAdmin();
+  const { addToCart } = useCart();
 
   const product = items.find((item) => item.id === id);
 
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
+  const [colorPreviewPhoto, setColorPreviewPhoto] = useState('');
   const [selectedMaterial, setSelectedMaterial] = useState('leather');
   const [selectedLining, setSelectedLining] = useState('fleece'); // 'fleece' = байка, 'fur' = хутро
-  const [showAllColors, setShowAllColors] = useState(false);
+  const [showMoreColors, setShowMoreColors] = useState(false);
   const [selectedColorId, setSelectedColorId] = useState(null);
   const [selectedSize, setSelectedSize] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [addedToast, setAddedToast] = useState(false);
+  const [isColorPhotosOpen, setIsColorPhotosOpen] = useState(false);
 
   const mfr = manufacturers[product?.manufacturerId] || manufacturers.m1;
   const activeSole = mfr?.soles?.find((s) => s.id === product?.soleId) || mfr?.soles?.[0];
@@ -59,16 +72,12 @@ export default function Product() {
   const availableLinings = product?.availableLinings || ['fleece', 'fur'];
 
   const paletteColors = mfr?.palettes?.[selectedMaterial] || [];
-  const basicColors = paletteColors.filter((c) => c.isBasic);
-  const visibleColors = showAllColors
-    ? paletteColors
-    : basicColors.length > 0
-    ? basicColors
-    : paletteColors;
-  const hasMoreColors = paletteColors.length > visibleColors.length;
+  const standardColors = paletteColors.filter((c) => !c.isNonReturnable);
+  const extraNonReturnableColors = paletteColors.filter((c) => c.isNonReturnable);
 
   const blockedSizes = product?.blockedSizes || [];
   const blockedColorIds = product?.blockedColorIds || [];
+  const colorPhotosMap = product?.colorPhotos || {};
 
   const gallery = product?.gallery?.length
     ? product.gallery
@@ -79,7 +88,8 @@ export default function Product() {
   useEffect(() => {
     if (!product) return;
     setActivePhotoIdx(0);
-    setShowAllColors(false);
+    setColorPreviewPhoto('');
+    setShowMoreColors(false);
     const firstMat = availableMaterials[0] || 'leather';
     setSelectedMaterial(firstMat);
     const firstLin = availableLinings[0] || 'fleece';
@@ -87,10 +97,16 @@ export default function Product() {
   }, [product?.id]);
 
   useEffect(() => {
+    setShowMoreColors(false);
+    setColorPreviewPhoto('');
     const firstValidColor = paletteColors.find(
       (c) => !c.isBlocked && !blockedColorIds.includes(c.id)
     );
-    setSelectedColorId(firstValidColor ? firstValidColor.id : null);
+    const nextId = firstValidColor ? firstValidColor.id : null;
+    setSelectedColorId(nextId);
+    if (nextId && colorPhotosMap[nextId]) {
+      setColorPreviewPhoto(colorPhotosMap[nextId]);
+    }
   }, [selectedMaterial, product?.id, mfr?.id]);
 
   if (!product || (!isAdmin && product.isBlocked)) {
@@ -117,13 +133,73 @@ export default function Product() {
   }
 
   const activeColor = paletteColors.find((c) => c.id === selectedColorId);
+  const mainDisplayPhoto =
+    colorPreviewPhoto || gallery[activePhotoIdx] || product.image;
 
   const handleSelectColor = (color) => {
-    if (!color.isBasic) {
-      setShowAllColors(true);
+    if (color.isNonReturnable) {
+      setShowMoreColors(true);
     }
     setSelectedColorId(color.id);
     setErrorMsg('');
+
+    const mappedPhoto = colorPhotosMap[color.id];
+    setColorPreviewPhoto(mappedPhoto || '');
+  };
+
+  const handleAssignColorPhoto = async (colorId, e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImageFile(file);
+      const nextMap = {
+        ...colorPhotosMap,
+        [colorId]: compressed,
+      };
+      updateProduct(product.id, { colorPhotos: nextMap });
+      if (selectedColorId === colorId) {
+        setColorPreviewPhoto(compressed);
+      }
+    } catch {
+      alert('Не вдалося привʼязати фото до кольору.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveColorPhoto = (colorId) => {
+    const nextMap = { ...colorPhotosMap };
+    delete nextMap[colorId];
+    updateProduct(product.id, { colorPhotos: nextMap });
+    if (selectedColorId === colorId) {
+      setColorPreviewPhoto('');
+    }
+  };
+
+  const renderColorSwatch = (color) => {
+    const isColorBlocked = color.isBlocked || blockedColorIds.includes(color.id);
+    return (
+      <button
+        key={color.id}
+        type="button"
+        disabled={isColorBlocked}
+        title={color.name[lang]}
+        onClick={() => handleSelectColor(color)}
+        className={`product-page__color-btn ${
+          selectedColorId === color.id ? 'is-selected' : ''
+        } ${isColorBlocked ? 'is-blocked' : ''}`}
+      >
+        <span
+          className="product-page__color-circle"
+          style={{
+            backgroundColor: color.hex || '#e2e8f0',
+            backgroundImage: color.imageUrl ? `url(${color.imageUrl})` : 'none',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+        />
+      </button>
+    );
   };
 
   const handleAddGalleryPhoto = async (e) => {
@@ -145,6 +221,7 @@ export default function Product() {
       gallery: updatedGallery,
     });
     setActivePhotoIdx(0);
+    setColorPreviewPhoto('');
   };
 
   const handleChangeProductManufacturer = (newMfrId) => {
@@ -181,7 +258,7 @@ export default function Product() {
   };
 
   const handleAddToCart = () => {
-    if (!selectedColorId) {
+    if (!selectedColorId || !activeColor) {
       setErrorMsg(lang === 'ua' ? 'Оберіть доступний колір' : 'Select an available color');
       return;
     }
@@ -190,10 +267,34 @@ export default function Product() {
       return;
     }
 
+    const cartItemPayload = {
+      cartItemKey: `${product.id}__${selectedMaterial}__${selectedLining}__${activeColor.id}__${selectedSize}`,
+      productId: product.id,
+      manufacturerId: mfr.id,
+      manufacturerName: mfr.name,
+      title: product.title,
+      price: product.price,
+      image: mainDisplayPhoto,
+      colorSwatchUrl: activeColor.imageUrl || '',
+      material: selectedMaterial,
+      materialLabel: MATERIAL_LABELS[selectedMaterial] || { ua: selectedMaterial, en: selectedMaterial },
+      lining: selectedLining,
+      liningLabel: LINING_LABELS[selectedLining] || { ua: selectedLining, en: selectedLining },
+      colorId: activeColor.id,
+      colorName: activeColor.name,
+      isNonReturnable: Boolean(activeColor.isNonReturnable),
+      size: selectedSize,
+      quantity: 1,
+    };
+
+    addToCart(cartItemPayload);
+
     setErrorMsg('');
     setAddedToast(true);
     setTimeout(() => setAddedToast(false), 2500);
   };
+
+  const attachedCountInPalette = paletteColors.filter((c) => colorPhotosMap[c.id]).length;
 
   return (
     <section className="product-page">
@@ -210,7 +311,7 @@ export default function Product() {
           <div className="product-page__gallery">
             <div className="product-page__media">
               <img
-                src={gallery[activePhotoIdx] || product.image}
+                src={mainDisplayPhoto}
                 alt={product.title[lang]}
                 className="product-page__img"
               />
@@ -220,8 +321,13 @@ export default function Product() {
               {gallery.map((photoUrl, idx) => (
                 <div
                   key={idx}
-                  onClick={() => setActivePhotoIdx(idx)}
-                  className={`product-page__thumb ${activePhotoIdx === idx ? 'is-active' : ''}`}
+                  onClick={() => {
+                    setColorPreviewPhoto('');
+                    setActivePhotoIdx(idx);
+                  }}
+                  className={`product-page__thumb ${
+                    !colorPreviewPhoto && activePhotoIdx === idx ? 'is-active' : ''
+                  }`}
                   style={{ cursor: 'pointer' }}
                 >
                   <img src={photoUrl} alt={`${product.title[lang]} ${idx + 1}`} />
@@ -331,7 +437,7 @@ export default function Product() {
               </div>
             </div>
 
-            {/* Кольори: базові одразу + кнопка розкриття всієї палітри */}
+            {/* Кольори: звичайні одразу + "Більше кольорів" для позицій без обміну і повернення */}
             <div className="product-page__section">
               <div className="product-page__label">
                 <span>{lang === 'ua' ? 'Колір' : 'Color'}</span>
@@ -341,52 +447,39 @@ export default function Product() {
               </div>
 
               <div className="product-page__colors" style={{ alignItems: 'center' }}>
-                {visibleColors.map((color) => {
-                  const isColorBlocked =
-                    color.isBlocked || blockedColorIds.includes(color.id);
-                  return (
-                    <button
-                      key={color.id}
-                      type="button"
-                      disabled={isColorBlocked}
-                      title={color.name[lang]}
-                      onClick={() => handleSelectColor(color)}
-                      className={`product-page__color-btn ${
-                        selectedColorId === color.id ? 'is-selected' : ''
-                      } ${isColorBlocked ? 'is-blocked' : ''}`}
-                    >
-                      <span
-                        className="product-page__color-circle"
-                        style={{ backgroundColor: color.hex }}
-                      />
-                    </button>
-                  );
-                })}
+                {standardColors.map(renderColorSwatch)}
 
-                {(hasMoreColors || showAllColors) && (
+                {extraNonReturnableColors.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => setShowAllColors((prev) => !prev)}
-                    style={{
-                      padding: '6px 12px',
-                      borderRadius: '999px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: showAllColors ? '#eef6ff' : '#fff',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      color: '#2b4c6f',
-                    }}
+                    onClick={() => setShowMoreColors((prev) => !prev)}
+                    className={`product-page__more-colors-btn ${
+                      showMoreColors ? 'is-open' : ''
+                    }`}
                   >
-                    {showAllColors
+                    {showMoreColors
                       ? lang === 'ua'
-                        ? 'Згорнути палітру'
-                        : 'Show basic'
+                        ? 'Згорнути'
+                        : 'Hide'
                       : lang === 'ua'
-                      ? `+ Більше кольорів (${paletteColors.length})`
-                      : `+ More colors (${paletteColors.length})`}
+                      ? 'Більше кольорів'
+                      : 'More colors'}
                   </button>
                 )}
               </div>
+
+              {showMoreColors && extraNonReturnableColors.length > 0 && (
+                <div className="product-page__extra-colors">
+                  <span className="product-page__extra-colors-title">
+                    {lang === 'ua'
+                      ? 'Без обміну і повернення'
+                      : 'Non-returnable & non-exchangeable'}
+                  </span>
+                  <div className="product-page__colors">
+                    {extraNonReturnableColors.map(renderColorSwatch)}
+                  </div>
+                </div>
+              )}
 
               {activeColor?.isNonReturnable && (
                 <p
@@ -484,6 +577,144 @@ export default function Product() {
                   >
                     {product.inStock ? '✓ Є в наявності' : 'Немає в наявності'}
                   </button>
+                </div>
+
+                {/* Прихована "папка" фото пари під кожен колір */}
+                <div
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '10px',
+                    backgroundColor: '#fff',
+                    padding: '10px 12px',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setIsColorPhotosOpen((prev) => !prev)}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: '#1e293b',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span>
+                      📁 Фото пари по кольорах ({selectedMaterial === 'leather' ? 'Шкіра' : 'Замша'}) — привʼязано: {attachedCountInPalette}/{paletteColors.length}
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#2b4c6f' }}>
+                      {isColorPhotosOpen ? 'Сховати ▲' : 'Відкрити ▼'}
+                    </span>
+                  </button>
+
+                  {isColorPhotosOpen && (
+                    <div
+                      style={{
+                        marginTop: '10px',
+                        paddingTop: '10px',
+                        borderTop: '1px solid #e2e8f0',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                      }}
+                    >
+                      {paletteColors.map((c) => {
+                        const attachedPhoto = colorPhotosMap[c.id];
+                        return (
+                          <div
+                            key={c.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '8px',
+                              padding: '6px 8px',
+                              borderRadius: '8px',
+                              backgroundColor: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                              <span
+                                style={{
+                                  width: '28px',
+                                  height: '28px',
+                                  borderRadius: '6px',
+                                  backgroundColor: '#e2e8f0',
+                                  backgroundImage: attachedPhoto
+                                    ? `url(${attachedPhoto})`
+                                    : c.imageUrl
+                                    ? `url(${c.imageUrl})`
+                                    : 'none',
+                                  backgroundSize: 'cover',
+                                  backgroundPosition: 'center',
+                                  border: '1px solid #cbd5e1',
+                                  flexShrink: 0,
+                                }}
+                              />
+                              <span
+                                style={{
+                                  fontSize: '12px',
+                                  fontWeight: 600,
+                                  color: '#334155',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {c.name.ua}
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                              <label
+                                style={{
+                                  padding: '4px 9px',
+                                  borderRadius: '6px',
+                                  border: '1px dashed #8cbff0',
+                                  backgroundColor: '#eef6ff',
+                                  color: '#1e3a5f',
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {attachedPhoto ? 'Замінити фото' : '+ Фото пари'}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => handleAssignColorPhoto(c.id, e)}
+                                  style={{ display: 'none' }}
+                                />
+                              </label>
+
+                              {attachedPhoto && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveColorPhoto(c.id)}
+                                  style={{
+                                    padding: '4px 7px',
+                                    borderRadius: '6px',
+                                    backgroundColor: '#fee2e2',
+                                    color: '#b91c1c',
+                                    fontSize: '11px',
+                                    fontWeight: 700,
+                                  }}
+                                  title="Прибрати фото для цього кольору"
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>

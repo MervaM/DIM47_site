@@ -1,6 +1,28 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
+
+const compressColorImage = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxSize = 240;
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = reject;
+      img.src = event.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 
 export default function AdminBar() {
   const {
@@ -16,6 +38,8 @@ export default function AdminBar() {
     deleteManufacturerColor,
   } = useAdmin();
 
+  const barRef = useRef(null);
+
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [activeMfrId, setActiveMfrId] = useState('m1');
   const [sectionTab, setSectionTab] = useState('soles'); // 'soles' | 'leather' | 'suede'
@@ -25,9 +49,38 @@ export default function AdminBar() {
 
   const [newNameUa, setNewNameUa] = useState('');
   const [newNameEn, setNewNameEn] = useState('');
-  const [newHex, setNewHex] = useState('#2b2b2b');
+  const [newImageUrl, setNewImageUrl] = useState('');
+  const [newFileName, setNewFileName] = useState('');
   const [newIsBasic, setNewIsBasic] = useState(true);
   const [newIsNonReturnable, setNewIsNonReturnable] = useState(false);
+
+  // Синхронізуємо фактичну висоту AdminBar з CSS-змінною для мобільного меню Header
+  useEffect(() => {
+    const root = document.documentElement;
+    if (!isAdmin || !barRef.current) {
+      root.style.setProperty('--admin-bar-height', '0px');
+      return;
+    }
+
+    const updateBarHeight = () => {
+      if (barRef.current) {
+        const height = Math.ceil(barRef.current.getBoundingClientRect().height);
+        root.style.setProperty('--admin-bar-height', `${height}px`);
+      }
+    };
+
+    updateBarHeight();
+
+    const observer = new ResizeObserver(updateBarHeight);
+    observer.observe(barRef.current);
+    window.addEventListener('resize', updateBarHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateBarHeight);
+      root.style.setProperty('--admin-bar-height', '0px');
+    };
+  }, [isAdmin]);
 
   if (!isAdmin) return null;
 
@@ -62,17 +115,41 @@ export default function AdminBar() {
     }
   };
 
+  const handleColorPhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressedDataUrl = await compressColorImage(file);
+      const cleanName = file.name
+        .replace(/\.[^/.]+$/, '')
+        .replace(/[-_]+/g, ' ')
+        .trim();
+      setNewImageUrl(compressedDataUrl);
+      setNewFileName(file.name);
+      if (!newNameUa.trim() && cleanName) {
+        setNewNameUa(cleanName);
+      }
+    } catch {
+      alert('Не вдалося завантажити фото кольору.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
   const handleAddColor = (e) => {
     e.preventDefault();
     if (!newNameUa.trim()) return;
     addManufacturerColor(activeMfrId, sectionTab, {
       name: { ua: newNameUa.trim(), en: newNameEn.trim() || newNameUa.trim() },
-      hex: newHex,
+      hex: '#e2e8f0',
+      imageUrl: newImageUrl || '',
       isBasic: newIsBasic,
       isNonReturnable: newIsNonReturnable,
     });
     setNewNameUa('');
     setNewNameEn('');
+    setNewImageUrl('');
+    setNewFileName('');
     setNewIsBasic(true);
     setNewIsNonReturnable(false);
   };
@@ -80,6 +157,7 @@ export default function AdminBar() {
   return (
     <>
       <div
+        ref={barRef}
         style={{
           backgroundColor: '#1e293b',
           color: '#fbf3d1',
@@ -374,7 +452,10 @@ export default function AdminBar() {
                             width: '22px',
                             height: '22px',
                             borderRadius: '50%',
-                            backgroundColor: color.hex,
+                            backgroundColor: color.hex || '#e2e8f0',
+                            backgroundImage: color.imageUrl ? `url(${color.imageUrl})` : 'none',
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
                             border: '1px solid rgba(0,0,0,0.2)',
                             flexShrink: 0,
                           }}
@@ -448,26 +529,92 @@ export default function AdminBar() {
                   ))}
                 </div>
 
-                <form onSubmit={handleAddColor} style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', borderTop: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    <input
-                      type="color"
-                      value={newHex}
-                      onChange={(e) => setNewHex(e.target.value)}
-                      style={{ width: '36px', height: '36px', border: 'none', background: 'none', cursor: 'pointer' }}
+                <form
+                  onSubmit={handleAddColor}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    paddingTop: '8px',
+                    borderTop: '1px solid #e2e8f0',
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div
+                      style={{
+                        width: '38px',
+                        height: '38px',
+                        borderRadius: '8px',
+                        backgroundColor: '#f1f5f9',
+                        backgroundImage: newImageUrl ? `url(${newImageUrl})` : 'none',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        border: '1px solid #cbd5e1',
+                        flexShrink: 0,
+                      }}
                     />
+
                     <input
+                      required
                       placeholder="Назва кольору (укр)"
                       value={newNameUa}
                       onChange={(e) => setNewNameUa(e.target.value)}
-                      style={{ flex: 1, minWidth: '120px', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px' }}
+                      style={{ flex: 1, minWidth: '130px', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px' }}
                     />
+
                     <input
                       placeholder="Color name (en)"
                       value={newNameEn}
                       onChange={(e) => setNewNameEn(e.target.value)}
-                      style={{ flex: 1, minWidth: '110px', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px' }}
+                      style={{ flex: 1, minWidth: '120px', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px' }}
                     />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <label
+                      style={{
+                        flex: 1,
+                        minWidth: '180px',
+                        border: '1.5px dashed #8cbff0',
+                        borderRadius: '8px',
+                        padding: '8px 10px',
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        backgroundColor: '#f8fafc',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: '#2b4c6f',
+                      }}
+                    >
+                      {newFileName ? `Фото: ${newFileName}` : '+ Завантажити фото з папки'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleColorPhotoChange}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+
+                    {newImageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewImageUrl('');
+                          setNewFileName('');
+                        }}
+                        style={{
+                          padding: '7px 10px',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          backgroundColor: '#fff',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: '#475569',
+                        }}
+                      >
+                        Прибрати фото
+                      </button>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>

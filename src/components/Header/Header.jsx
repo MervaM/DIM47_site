@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAdmin } from '../../context/AdminContext';
+import { useCart } from '../../context/CartContext';
 import './Header.scss';
 
 export default function Header() {
@@ -8,7 +10,10 @@ export default function Header() {
   const location = useLocation();
   const navigate = useNavigate();
   const { lang, setLang, t, gender, toggleGender } = useLanguage();
+  const { isAdmin } = useAdmin();
+  const { totalCount } = useCart();
 
+  const noticeRef = useRef(null);
   const clickCountRef = useRef(0);
   const clickTimerRef = useRef(null);
 
@@ -24,6 +29,35 @@ export default function Header() {
       document.body.style.overflow = '';
     };
   }, [isMenuOpen]);
+
+  // Синхронізуємо висоту верхньої смужки з CSS-змінною для мобільного меню
+  useEffect(() => {
+    const root = document.documentElement;
+    const el = noticeRef.current;
+    if (!el) {
+      root.style.setProperty('--notice-bar-height', '0px');
+      return;
+    }
+
+    const updateNoticeHeight = () => {
+      if (noticeRef.current) {
+        const height = Math.ceil(noticeRef.current.getBoundingClientRect().height);
+        root.style.setProperty('--notice-bar-height', `${height}px`);
+      }
+    };
+
+    updateNoticeHeight();
+
+    const observer = new ResizeObserver(updateNoticeHeight);
+    observer.observe(el);
+    window.addEventListener('resize', updateNoticeHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateNoticeHeight);
+      root.style.setProperty('--notice-bar-height', '0px');
+    };
+  }, [lang]);
 
   // Очищуємо таймер кліків при розмонтуванні компонента
   useEffect(() => {
@@ -47,8 +81,25 @@ export default function Header() {
     }, 600);
   };
 
+  const noticeText =
+    lang === 'en'
+      ? 'Production time: 9–14 business days. Saturday and Sunday are days off.'
+      : 'Терміни пошиття: 9-14 робочих днів. Субота і неділя - вихідні дні.';
+
+  const headerClasses = [
+    'header',
+    isMenuOpen ? 'is-menu-open' : '',
+    isAdmin ? 'has-admin-bar' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <header className="header">
+    <header className={headerClasses}>
+      <div ref={noticeRef} className="header__notice">
+        <div className="container header__notice-inner">{noticeText}</div>
+      </div>
+
       <div className="container header__inner">
         {/* Бургер-кнопка (мобільна версія) */}
         <button
@@ -130,7 +181,11 @@ export default function Header() {
         </Link>
 
         {/* Основне меню навігації */}
-        <nav className={`header__nav ${isMenuOpen ? 'is-open' : ''}`}>
+        <nav
+          id="mobile-header-nav"
+          aria-label="Primary navigation"
+          className={`header__nav ${isMenuOpen ? 'is-open' : ''}`}
+        >
           <ul className="header__list">
             <li>
               <NavLink to="/" className="header__link" end>
@@ -263,7 +318,7 @@ export default function Header() {
             <line x1="3" y1="6" x2="21" y2="6" />
             <path d="M16 10a4 4 0 0 1-8 0" />
           </svg>
-          <span className="header__cart-badge">0</span>
+          <span className="header__cart-badge">{totalCount}</span>
         </Link>
       </div>
     </header>

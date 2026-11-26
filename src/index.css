@@ -15,16 +15,27 @@
   --text-secondary: #666666;
   --border-color: #e5e5e5;
   --accent-color: #111111;
-  --font-main: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-main: 'Comfortaa', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+html,
+body {
+  font-family: var(--font-main);
 }
 
 body {
-  font-family: var(--font-main);
   font-size: 16px;
   line-height: 1.5;
   color: var(--text-primary);
   background-color: var(--bg-primary);
   -webkit-font-smoothing: antialiased;
+}
+
+input,
+textarea,
+select,
+button {
+  font-family: var(--font-main);
 }
 
 img {
@@ -39,7 +50,8 @@ a {
 }
 
 button {
-  font: inherit;
+  font-size: inherit;
+  line-height: inherit;
   cursor: pointer;
   background: none;
   border: none;
