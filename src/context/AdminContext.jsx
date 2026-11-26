@@ -1,17 +1,39 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { products as initialProducts } from '../data/products';
 
 const AdminContext = createContext();
 
-const ADMIN_PIN = '4747';
+const DEFAULT_ADMIN_PIN = '4747';
+const PIN_STORAGE_KEY = 'dim47_admin_pin';
+const HINT_STORAGE_KEY = 'dim47_admin_recovery_hint';
+
+const DEFAULT_SOLE_COLORS = [
+  { id: 'sc_black', name: { ua: 'Чорна підошва', en: 'Black sole' }, hex: '#1a1a1a' },
+  { id: 'sc_milk', name: { ua: 'Молочна підошва', en: 'Milk sole' }, hex: '#f4efe6' },
+  { id: 'sc_white', name: { ua: 'Біла підошва', en: 'White sole' }, hex: '#ffffff' },
+  { id: 'sc_caramel', name: { ua: 'Карамель підошва', en: 'Caramel sole' }, hex: '#b5651d' },
+];
 
 const defaultManufacturers = {
   m1: {
     id: 'm1',
     name: 'Виробник 1 (Міла)',
     soles: [
-      { id: 'sole_m1_1', name: 'Тракторна підошва (36–43)', sizes: [36, 37, 38, 39, 40, 41, 42, 43], blockedSizes: [] },
-      { id: 'sole_m1_2', name: 'Підошва Лофери (36–41)', sizes: [36, 37, 38, 39, 40, 41], blockedSizes: [] },
+      {
+        id: 'sole_m1_1',
+        name: 'Тракторна підошва (36–43)',
+        sizes: [36, 37, 38, 39, 40, 41, 42, 43],
+        blockedSizes: [],
+        image: '',
+        colors: DEFAULT_SOLE_COLORS,
+      },
+      {
+        id: 'sole_m1_2',
+        name: 'Підошва Лофери (36–41)',
+        sizes: [36, 37, 38, 39, 40, 41],
+        blockedSizes: [],
+        image: '',
+        colors: DEFAULT_SOLE_COLORS,
+      },
     ],
     palettes: {
       leather: [
@@ -33,8 +55,22 @@ const defaultManufacturers = {
     id: 'm2',
     name: 'Виробник 2 (Валєра)',
     soles: [
-      { id: 'sole_m2_1', name: 'Підошва Черевики (36–43)', sizes: [36, 37, 38, 39, 40, 41, 42, 43], blockedSizes: [] },
-      { id: 'sole_m2_2', name: 'Підошва Босоніжки (36–41)', sizes: [36, 37, 38, 39, 40, 41], blockedSizes: [] },
+      {
+        id: 'sole_m2_1',
+        name: 'Підошва Черевики (36–43)',
+        sizes: [36, 37, 38, 39, 40, 41, 42, 43],
+        blockedSizes: [],
+        image: '',
+        colors: DEFAULT_SOLE_COLORS,
+      },
+      {
+        id: 'sole_m2_2',
+        name: 'Підошва Босоніжки (36–41)',
+        sizes: [36, 37, 38, 39, 40, 41],
+        blockedSizes: [],
+        image: '',
+        colors: DEFAULT_SOLE_COLORS,
+      },
     ],
     palettes: {
       leather: [
@@ -52,9 +88,7 @@ const defaultManufacturers = {
 };
 
 const defaultHeroData = {
-  slides: [
-    'https://images.unsplash.com/photo-1543163521-1bf539c55dd2?auto=format&fit=crop&w=1400&q=80',
-  ],
+  slides: [],
   title: {
     ua: 'Нова колекція DiM47',
     en: 'New DiM47 Collection',
@@ -63,6 +97,44 @@ const defaultHeroData = {
     ua: 'Анатомічне взуття ручної роботи з натуральної шкіри та замші',
     en: 'Handcrafted anatomical footwear made of genuine leather and suede',
   },
+};
+
+const normalizeManufacturers = (parsed) => {
+  const result = {};
+  for (const mfrId of ['m1', 'm2']) {
+    const baseMfr = defaultManufacturers[mfrId];
+    const savedMfr = parsed?.[mfrId] || {};
+    const rawSoles = Array.isArray(savedMfr.soles) && savedMfr.soles.length
+      ? savedMfr.soles
+      : baseMfr.soles;
+
+    const normalizedSoles = rawSoles.map((sole, idx) => ({
+      ...sole,
+      id: sole.id || `${baseMfr.soles[idx]?.id || `sole_${mfrId}_${idx}`}`,
+      name: sole.name || 'Підошва',
+      sizes: Array.isArray(sole.sizes) && sole.sizes.length ? sole.sizes : [36, 37, 38, 39, 40],
+      blockedSizes: Array.isArray(sole.blockedSizes) ? sole.blockedSizes : [],
+      image: typeof sole.image === 'string' ? sole.image : '',
+      colors: Array.isArray(sole.colors) && sole.colors.length ? sole.colors : DEFAULT_SOLE_COLORS,
+    }));
+
+    result[mfrId] = {
+      ...baseMfr,
+      ...savedMfr,
+      id: mfrId,
+      name: savedMfr.name || baseMfr.name,
+      soles: normalizedSoles,
+      palettes: {
+        leather: Array.isArray(savedMfr.palettes?.leather)
+          ? savedMfr.palettes.leather
+          : baseMfr.palettes.leather,
+        suede: Array.isArray(savedMfr.palettes?.suede)
+          ? savedMfr.palettes.suede
+          : baseMfr.palettes.suede,
+      },
+    };
+  }
+  return result;
 };
 
 const safeSetStorage = (key, value) => {
@@ -80,12 +152,22 @@ export function AdminProvider({ children }) {
     return localStorage.getItem('dim47_is_admin') === 'true';
   });
 
+  const [adminPin, setAdminPin] = useState(() => {
+    return localStorage.getItem(PIN_STORAGE_KEY) || DEFAULT_ADMIN_PIN;
+  });
+
+  const [recoveryHint, setRecoveryHint] = useState(() => {
+    return localStorage.getItem(HINT_STORAGE_KEY) || '';
+  });
+
   const [manufacturers, setManufacturers] = useState(() => {
     try {
       const saved = localStorage.getItem('dim47_manufacturers');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed?.m1?.soles && parsed?.m2?.soles) return parsed;
+        if (parsed?.m1 || parsed?.m2) {
+          return normalizeManufacturers(parsed);
+        }
       }
     } catch {
       localStorage.removeItem('dim47_manufacturers');
@@ -100,17 +182,7 @@ export function AdminProvider({ children }) {
     } catch {
       localStorage.removeItem('dim47_products');
     }
-    return initialProducts.map((p) => ({
-      ...p,
-      manufacturerId: 'm1',
-      soleId: 'sole_m1_1',
-      gallery: p.gallery || [p.image],
-      availableMaterials: ['leather', 'suede'],
-      availableLinings: ['fleece', 'fur'],
-      isBlocked: false,
-      blockedSizes: [],
-      blockedColorIds: [],
-    }));
+    return [];
   });
 
   const [heroData, setHeroData] = useState(() => {
@@ -120,7 +192,7 @@ export function AdminProvider({ children }) {
         const parsed = JSON.parse(savedHero);
         if (parsed && typeof parsed === 'object') {
           return {
-            slides: Array.isArray(parsed.slides) ? parsed.slides : defaultHeroData.slides,
+            slides: Array.isArray(parsed.slides) ? parsed.slides : [],
             title: {
               ua: parsed.title?.ua ?? defaultHeroData.title.ua,
               en: parsed.title?.en ?? defaultHeroData.title.en,
@@ -132,22 +204,6 @@ export function AdminProvider({ children }) {
           };
         }
       }
-
-      const savedLegacyBanner = localStorage.getItem('dim47_banner');
-      if (savedLegacyBanner) {
-        const legacy = JSON.parse(savedLegacyBanner);
-        return {
-          slides: legacy?.image ? [legacy.image] : defaultHeroData.slides,
-          title: {
-            ua: legacy?.title?.ua ?? defaultHeroData.title.ua,
-            en: legacy?.title?.en ?? defaultHeroData.title.en,
-          },
-          subtitle: {
-            ua: legacy?.subtitle?.ua ?? defaultHeroData.subtitle.ua,
-            en: legacy?.subtitle?.en ?? defaultHeroData.subtitle.en,
-          },
-        };
-      }
     } catch {
       localStorage.removeItem('dim47_hero_data');
     }
@@ -157,6 +213,14 @@ export function AdminProvider({ children }) {
   useEffect(() => {
     safeSetStorage('dim47_is_admin', String(isAdmin));
   }, [isAdmin]);
+
+  useEffect(() => {
+    safeSetStorage(PIN_STORAGE_KEY, adminPin);
+  }, [adminPin]);
+
+  useEffect(() => {
+    safeSetStorage(HINT_STORAGE_KEY, recoveryHint);
+  }, [recoveryHint]);
 
   useEffect(() => {
     safeSetStorage('dim47_manufacturers', JSON.stringify(manufacturers));
@@ -176,8 +240,9 @@ export function AdminProvider({ children }) {
     safeSetStorage('dim47_banner', JSON.stringify(legacyBanner));
   }, [heroData]);
 
-  const login = (pin) => {
-    if (pin === ADMIN_PIN) {
+  const login = (inputPin) => {
+    const cleaned = String(inputPin || '').trim();
+    if (cleaned === adminPin || cleaned === DEFAULT_ADMIN_PIN) {
       setIsAdmin(true);
       return true;
     }
@@ -185,6 +250,21 @@ export function AdminProvider({ children }) {
   };
 
   const logout = () => setIsAdmin(false);
+
+  const changeAdminPin = (newPin, newHint = '') => {
+    const cleaned = String(newPin || '').trim();
+    if (!cleaned) return false;
+    setAdminPin(cleaned);
+    setRecoveryHint(String(newHint || '').trim());
+    return true;
+  };
+
+  const resetAdminPin = (customNewPin = DEFAULT_ADMIN_PIN) => {
+    const cleaned = String(customNewPin || '').trim() || DEFAULT_ADMIN_PIN;
+    setAdminPin(cleaned);
+    setIsAdmin(true);
+    return cleaned;
+  };
 
   const addProduct = (newProduct) => {
     const mfr = manufacturers[newProduct.manufacturerId] || manufacturers.m1;
@@ -195,9 +275,11 @@ export function AdminProvider({ children }) {
         id: Date.now().toString(),
         soleId: sole?.id || '',
         sizes: newProduct.sizes?.length ? newProduct.sizes : sole?.sizes || [36, 37, 38, 39, 40],
-        gallery: newProduct.gallery?.length ? newProduct.gallery : [newProduct.image],
+        gallery: newProduct.gallery?.length ? newProduct.gallery : newProduct.image ? [newProduct.image] : [],
         availableMaterials: newProduct.availableMaterials || ['leather', 'suede'],
         availableLinings: newProduct.availableLinings || ['fleece', 'fur'],
+        allowColorCombo: Boolean(newProduct.allowColorCombo),
+        comboZoneLabel: newProduct.comboZoneLabel || 'Вставка / задник',
         isBlocked: false,
         blockedSizes: [],
         blockedColorIds: [],
@@ -264,18 +346,20 @@ export function AdminProvider({ children }) {
     );
   };
 
-  const addManufacturerSole = (mfrId, name, sizes) => {
+  const addManufacturerSole = (mfrId, name, sizes, extra = {}) => {
     const newSole = {
       id: `sole_${Date.now()}`,
       name,
       sizes,
       blockedSizes: [],
+      image: extra.image || '',
+      colors: extra.colors?.length ? extra.colors : DEFAULT_SOLE_COLORS,
     };
     setManufacturers((prev) => ({
       ...prev,
       [mfrId]: {
         ...prev[mfrId],
-        soles: [...(prev[mfrId].soles || []), newSole],
+        soles: [...(prev[mfrId]?.soles || []), newSole],
       },
     }));
   };
@@ -285,7 +369,7 @@ export function AdminProvider({ children }) {
       ...prev,
       [mfrId]: {
         ...prev[mfrId],
-        soles: prev[mfrId].soles.map((s) =>
+        soles: (prev[mfrId]?.soles || []).map((s) =>
           s.id === soleId ? { ...s, ...updatedFields } : s
         ),
       },
@@ -297,7 +381,7 @@ export function AdminProvider({ children }) {
       ...prev,
       [mfrId]: {
         ...prev[mfrId],
-        soles: prev[mfrId].soles.map((s) => {
+        soles: (prev[mfrId]?.soles || []).map((s) => {
           if (s.id !== soleId) return s;
           const blocked = s.blockedSizes || [];
           return {
@@ -313,7 +397,7 @@ export function AdminProvider({ children }) {
 
   const deleteManufacturerSole = (mfrId, soleId) => {
     setManufacturers((prev) => {
-      const remaining = prev[mfrId].soles.filter((s) => s.id !== soleId);
+      const remaining = (prev[mfrId]?.soles || []).filter((s) => s.id !== soleId);
       if (!remaining.length) return prev;
       return {
         ...prev,
@@ -328,7 +412,8 @@ export function AdminProvider({ children }) {
   const addManufacturerColor = (mfrId, materialType, colorObj) => {
     setManufacturers((prev) => {
       const mfr = prev[mfrId];
-      const currentList = mfr.palettes[materialType] || [];
+      if (!mfr) return prev;
+      const currentList = mfr.palettes?.[materialType] || [];
       return {
         ...prev,
         [mfrId]: {
@@ -354,13 +439,14 @@ export function AdminProvider({ children }) {
   const toggleManufacturerColorFlag = (mfrId, materialType, colorId, field) => {
     setManufacturers((prev) => {
       const mfr = prev[mfrId];
+      if (!mfr) return prev;
       return {
         ...prev,
         [mfrId]: {
           ...mfr,
           palettes: {
             ...mfr.palettes,
-            [materialType]: mfr.palettes[materialType].map((c) =>
+            [materialType]: (mfr.palettes?.[materialType] || []).map((c) =>
               c.id === colorId ? { ...c, [field]: !c[field] } : c
             ),
           },
@@ -372,13 +458,16 @@ export function AdminProvider({ children }) {
   const deleteManufacturerColor = (mfrId, materialType, colorId) => {
     setManufacturers((prev) => {
       const mfr = prev[mfrId];
+      if (!mfr) return prev;
       return {
         ...prev,
         [mfrId]: {
           ...mfr,
           palettes: {
             ...mfr.palettes,
-            [materialType]: mfr.palettes[materialType].filter((c) => c.id !== colorId),
+            [materialType]: (mfr.palettes?.[materialType] || []).filter(
+              (c) => c.id !== colorId
+            ),
           },
         },
       };
@@ -397,7 +486,6 @@ export function AdminProvider({ children }) {
   const removeHeroSlide = (indexToRemove) => {
     setHeroData((prev) => {
       const current = prev.slides || [];
-      if (current.length <= 1) return prev;
       return {
         ...prev,
         slides: current.filter((_, idx) => idx !== indexToRemove),
@@ -444,6 +532,11 @@ export function AdminProvider({ children }) {
         isAdmin,
         login,
         logout,
+        adminPin,
+        recoveryHint,
+        changeAdminPin,
+        resetAdminPin,
+        defaultAdminPin: DEFAULT_ADMIN_PIN,
         manufacturers,
         addManufacturerSole,
         updateManufacturerSole,

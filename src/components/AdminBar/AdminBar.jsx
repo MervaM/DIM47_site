@@ -2,20 +2,19 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
 
-const compressColorImage = (file) =>
+const compressImage = (file, maxSize = 360, quality = 0.78) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        const maxSize = 240;
         const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
         const canvas = document.createElement('canvas');
         canvas.width = Math.max(1, Math.round(img.width * scale));
         canvas.height = Math.max(1, Math.round(img.height * scale));
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
+        resolve(canvas.toDataURL('image/jpeg', quality));
       };
       img.onerror = reject;
       img.src = event.target.result;
@@ -23,6 +22,14 @@ const compressColorImage = (file) =>
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+
+const SOLE_COLOR_PRESETS = [
+  { id: 'sc_black', name: { ua: 'Чорна', en: 'Black' }, hex: '#1a1a1a' },
+  { id: 'sc_milk', name: { ua: 'Молочна', en: 'Milk' }, hex: '#f4efe6' },
+  { id: 'sc_white', name: { ua: 'Біла', en: 'White' }, hex: '#ffffff' },
+  { id: 'sc_caramel', name: { ua: 'Карамель', en: 'Caramel' }, hex: '#b5651d' },
+  { id: 'sc_beige', name: { ua: 'Бежева', en: 'Beige' }, hex: '#d8c3a5' },
+];
 
 export default function AdminBar() {
   const {
@@ -46,6 +53,8 @@ export default function AdminBar() {
 
   const [newSoleName, setNewSoleName] = useState('');
   const [newSoleSizes, setNewSoleSizes] = useState('36, 37, 38, 39, 40, 41');
+  const [newSoleImage, setNewSoleImage] = useState('');
+  const [newSoleFileName, setNewSoleFileName] = useState('');
 
   const [newNameUa, setNewNameUa] = useState('');
   const [newNameEn, setNewNameEn] = useState('');
@@ -54,7 +63,6 @@ export default function AdminBar() {
   const [newIsBasic, setNewIsBasic] = useState(true);
   const [newIsNonReturnable, setNewIsNonReturnable] = useState(false);
 
-  // Синхронізуємо фактичну висоту AdminBar з CSS-змінною для мобільного меню Header
   useEffect(() => {
     const root = document.documentElement;
     if (!isAdmin || !barRef.current) {
@@ -84,23 +92,67 @@ export default function AdminBar() {
 
   if (!isAdmin) return null;
 
-  const currentMfr = manufacturers[activeMfrId];
+  const currentMfr = manufacturers?.[activeMfrId] || manufacturers?.m1 || null;
+
+  const handleNewSolePhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImage(file, 420, 0.78);
+      setNewSoleImage(compressed);
+      setNewSoleFileName(file.name);
+    } catch {
+      alert('Не вдалося завантажити фото підошви.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleSolePhotoUpdate = async (soleId, e) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentMfr) return;
+    try {
+      const compressed = await compressImage(file, 420, 0.78);
+      updateManufacturerSole(currentMfr.id, soleId, { image: compressed });
+    } catch {
+      alert('Не вдалося оновити фото підошви.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleToggleSoleColor = (sole, preset) => {
+    if (!currentMfr) return;
+    const currentColors = sole.colors?.length ? sole.colors : SOLE_COLOR_PRESETS;
+    const exists = currentColors.some((c) => c.id === preset.id);
+    if (exists && currentColors.length === 1) return;
+    const nextColors = exists
+      ? currentColors.filter((c) => c.id !== preset.id)
+      : [...currentColors, preset];
+    updateManufacturerSole(currentMfr.id, sole.id, { colors: nextColors });
+  };
 
   const handleAddSole = (e) => {
     e.preventDefault();
-    if (!newSoleName.trim()) return;
+    if (!newSoleName.trim() || !currentMfr) return;
     const parsedSizes = newSoleSizes
       .split(',')
       .map((s) => Number(s.trim()))
       .filter((n) => !Number.isNaN(n) && n > 0);
     if (!parsedSizes.length) return;
 
-    addManufacturerSole(activeMfrId, newSoleName.trim(), parsedSizes);
+    addManufacturerSole(currentMfr.id, newSoleName.trim(), parsedSizes, {
+      image: newSoleImage,
+      colors: SOLE_COLOR_PRESETS.slice(0, 4),
+    });
     setNewSoleName('');
     setNewSoleSizes('36, 37, 38, 39, 40, 41');
+    setNewSoleImage('');
+    setNewSoleFileName('');
   };
 
   const handleEditSoleSizes = (sole) => {
+    if (!currentMfr) return;
     const input = window.prompt(
       `Розмірна сітка для «${sole.name}» (через кому):`,
       sole.sizes.join(', ')
@@ -111,7 +163,7 @@ export default function AdminBar() {
       .map((s) => Number(s.trim()))
       .filter((n) => !Number.isNaN(n) && n > 0);
     if (parsed.length) {
-      updateManufacturerSole(activeMfrId, sole.id, { sizes: parsed });
+      updateManufacturerSole(currentMfr.id, sole.id, { sizes: parsed });
     }
   };
 
@@ -119,7 +171,7 @@ export default function AdminBar() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const compressedDataUrl = await compressColorImage(file);
+      const compressedDataUrl = await compressImage(file, 240, 0.8);
       const cleanName = file.name
         .replace(/\.[^/.]+$/, '')
         .replace(/[-_]+/g, ' ')
@@ -138,8 +190,8 @@ export default function AdminBar() {
 
   const handleAddColor = (e) => {
     e.preventDefault();
-    if (!newNameUa.trim()) return;
-    addManufacturerColor(activeMfrId, sectionTab, {
+    if (!newNameUa.trim() || !currentMfr) return;
+    addManufacturerColor(currentMfr.id, sectionTab, {
       name: { ua: newNameUa.trim(), en: newNameEn.trim() || newNameUa.trim() },
       hex: '#e2e8f0',
       imageUrl: newImageUrl || '',
@@ -227,7 +279,7 @@ export default function AdminBar() {
               borderRadius: '16px',
               padding: '20px',
               width: '100%',
-              maxWidth: '560px',
+              maxWidth: '580px',
               maxHeight: '90svh',
               overflowY: 'auto',
               display: 'flex',
@@ -254,8 +306,8 @@ export default function AdminBar() {
                     borderRadius: '10px',
                     fontWeight: 600,
                     fontSize: '13px',
-                    backgroundColor: activeMfrId === mfr.id ? '#8cbff0' : '#f1f5f9',
-                    color: activeMfrId === mfr.id ? '#1e3a5f' : '#475569',
+                    backgroundColor: currentMfr.id === mfr.id ? '#8cbff0' : '#f1f5f9',
+                    color: currentMfr.id === mfr.id ? '#1e3a5f' : '#475569',
                   }}
                 >
                   {mfr.name}
@@ -311,82 +363,194 @@ export default function AdminBar() {
             {sectionTab === 'soles' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <p style={{ fontSize: '12px', color: '#64748b' }}>
-                  Кожна підошва має власну розмірну сітку. Натисніть на розмір, щоб поставити його на «Стоп»:
+                  Можна завантажити фото підошви (або обрізаний фрагмент підошви з пари), обрати доступні кольори та поставити розмір на «Стоп».
                 </p>
 
-                {(currentMfr.soles || []).map((sole) => (
-                  <div
-                    key={sole.id}
-                    style={{
-                      padding: '12px',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '10px',
-                      backgroundColor: '#f8fafc',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                      <strong style={{ fontSize: '14px', color: '#1e293b' }}>{sole.name}</strong>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button
-                          type="button"
-                          onClick={() => handleEditSoleSizes(sole)}
-                          style={{
-                            padding: '4px 8px',
-                            borderRadius: '6px',
-                            fontSize: '11px',
-                            border: '1px solid #cbd5e1',
-                            backgroundColor: '#fff',
-                          }}
-                        >
-                          Змінити сітку
-                        </button>
-                        {currentMfr.soles.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => deleteManufacturerSole(activeMfrId, sole.id)}
+                {(currentMfr.soles || []).map((sole) => {
+                  const activeColors = sole.colors?.length ? sole.colors : SOLE_COLOR_PRESETS;
+                  return (
+                    <div
+                      key={sole.id}
+                      style={{
+                        padding: '12px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '10px',
+                        backgroundColor: '#f8fafc',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div
+                            style={{
+                              width: '52px',
+                              height: '44px',
+                              borderRadius: '8px',
+                              border: '1px solid #cbd5e1',
+                              backgroundColor: '#fff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              overflow: 'hidden',
+                              fontSize: '10px',
+                              color: '#94a3b8',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {sole.image ? (
+                              <img
+                                src={sole.image}
+                                alt={sole.name}
+                                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                              />
+                            ) : (
+                              <span>Немає фото</span>
+                            )}
+                          </div>
+                          <strong style={{ fontSize: '14px', color: '#1e293b' }}>{sole.name}</strong>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          <label
                             style={{
                               padding: '4px 8px',
                               borderRadius: '6px',
                               fontSize: '11px',
-                              backgroundColor: '#fee2e2',
-                              color: '#b91c1c',
+                              fontWeight: 600,
+                              border: '1px dashed #8cbff0',
+                              backgroundColor: '#eef6ff',
+                              color: '#1e3a5f',
+                              cursor: 'pointer',
                             }}
                           >
-                            ×
+                            {sole.image ? 'Замінити фото' : '+ Фото підошви'}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleSolePhotoUpdate(sole.id, e)}
+                              style={{ display: 'none' }}
+                            />
+                          </label>
+
+                          {sole.image && (
+                            <button
+                              type="button"
+                              onClick={() => updateManufacturerSole(currentMfr.id, sole.id, { image: '' })}
+                              style={{
+                                padding: '4px 7px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                backgroundColor: '#fee2e2',
+                                color: '#b91c1c',
+                              }}
+                              title="Прибрати фото підошви"
+                            >
+                              × фото
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleEditSoleSizes(sole)}
+                            style={{
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              border: '1px solid #cbd5e1',
+                              backgroundColor: '#fff',
+                            }}
+                          >
+                            Змінити сітку
                           </button>
-                        )}
+
+                          {currentMfr.soles.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => deleteManufacturerSole(currentMfr.id, sole.id)}
+                              style={{
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                backgroundColor: '#fee2e2',
+                                color: '#b91c1c',
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#475569', marginBottom: '5px' }}>
+                          Кольори підошви:
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {SOLE_COLOR_PRESETS.map((preset) => {
+                            const isEnabled = activeColors.some((c) => c.id === preset.id);
+                            return (
+                              <button
+                                key={preset.id}
+                                type="button"
+                                onClick={() => handleToggleSoleColor(sole, preset)}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  padding: '3px 8px',
+                                  borderRadius: '999px',
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  border: isEnabled ? '1.5px solid #8cbff0' : '1px solid #cbd5e1',
+                                  backgroundColor: isEnabled ? '#eef6ff' : '#fff',
+                                  color: isEnabled ? '#1e3a5f' : '#94a3b8',
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    width: '10px',
+                                    height: '10px',
+                                    borderRadius: '50%',
+                                    backgroundColor: preset.hex,
+                                    border: '1px solid rgba(0,0,0,0.2)',
+                                  }}
+                                />
+                                {preset.name.ua}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {sole.sizes.map((sz) => {
+                          const isStopped = (sole.blockedSizes || []).includes(sz);
+                          return (
+                            <button
+                              key={sz}
+                              type="button"
+                              onClick={() => toggleSoleBlockedSize(currentMfr.id, sole.id, sz)}
+                              style={{
+                                padding: '4px 9px',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                fontWeight: 600,
+                                border: '1px solid #cbd5e1',
+                                backgroundColor: isStopped ? '#fee2e2' : '#fff',
+                                color: isStopped ? '#b91c1c' : '#334155',
+                                textDecoration: isStopped ? 'line-through' : 'none',
+                              }}
+                            >
+                              {sz}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
-
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      {sole.sizes.map((sz) => {
-                        const isStopped = (sole.blockedSizes || []).includes(sz);
-                        return (
-                          <button
-                            key={sz}
-                            type="button"
-                            onClick={() => toggleSoleBlockedSize(activeMfrId, sole.id, sz)}
-                            style={{
-                              padding: '4px 9px',
-                              borderRadius: '6px',
-                              fontSize: '12px',
-                              fontWeight: 600,
-                              border: '1px solid #cbd5e1',
-                              backgroundColor: isStopped ? '#fee2e2' : '#fff',
-                              color: isStopped ? '#b91c1c' : '#334155',
-                              textDecoration: isStopped ? 'line-through' : 'none',
-                            }}
-                          >
-                            {sz}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 <form
                   onSubmit={handleAddSole}
@@ -412,6 +576,33 @@ export default function AdminBar() {
                       onChange={(e) => setNewSoleSizes(e.target.value)}
                       style={{ flex: 1, minWidth: '120px', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px' }}
                     />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <label
+                      style={{
+                        flex: 1,
+                        minWidth: '180px',
+                        border: '1.5px dashed #8cbff0',
+                        borderRadius: '8px',
+                        padding: '8px 10px',
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        backgroundColor: '#f8fafc',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: '#2b4c6f',
+                      }}
+                    >
+                      {newSoleFileName ? `Фото підошви: ${newSoleFileName}` : '+ Фото підошви або вирізка з пари'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleNewSolePhotoChange}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+
                     <button
                       type="submit"
                       style={{
@@ -431,7 +622,7 @@ export default function AdminBar() {
             ) : (
               <>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {(currentMfr.palettes[sectionTab] || []).map((color) => (
+                  {(currentMfr.palettes?.[sectionTab] || []).map((color) => (
                     <div
                       key={color.id}
                       style={{
@@ -468,7 +659,7 @@ export default function AdminBar() {
                       <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
                         <button
                           type="button"
-                          onClick={() => toggleManufacturerColorFlag(activeMfrId, sectionTab, color.id, 'isBasic')}
+                          onClick={() => toggleManufacturerColorFlag(currentMfr.id, sectionTab, color.id, 'isBasic')}
                           style={{
                             padding: '4px 8px',
                             borderRadius: '6px',
@@ -483,7 +674,7 @@ export default function AdminBar() {
 
                         <button
                           type="button"
-                          onClick={() => toggleManufacturerColorFlag(activeMfrId, sectionTab, color.id, 'isNonReturnable')}
+                          onClick={() => toggleManufacturerColorFlag(currentMfr.id, sectionTab, color.id, 'isNonReturnable')}
                           style={{
                             padding: '4px 8px',
                             borderRadius: '6px',
@@ -498,7 +689,7 @@ export default function AdminBar() {
 
                         <button
                           type="button"
-                          onClick={() => toggleManufacturerColorFlag(activeMfrId, sectionTab, color.id, 'isBlocked')}
+                          onClick={() => toggleManufacturerColorFlag(currentMfr.id, sectionTab, color.id, 'isBlocked')}
                           style={{
                             padding: '4px 8px',
                             borderRadius: '6px',
@@ -513,7 +704,7 @@ export default function AdminBar() {
 
                         <button
                           type="button"
-                          onClick={() => deleteManufacturerColor(activeMfrId, sectionTab, color.id)}
+                          onClick={() => deleteManufacturerColor(currentMfr.id, sectionTab, color.id)}
                           style={{
                             padding: '4px 8px',
                             borderRadius: '6px',

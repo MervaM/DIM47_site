@@ -1,9 +1,12 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAdmin } from '../../context/AdminContext';
 import { CATEGORIES } from '../../data/products';
-import ProductCard from '../../components/ProductCard/ProductCard';
+import ProductCard, {
+  LAST_PRODUCT_ID_KEY,
+  CATALOG_SCROLL_KEY,
+} from '../../components/ProductCard/ProductCard';
 import './Catalog.scss';
 
 const compressImageFile = (file) =>
@@ -64,6 +67,70 @@ export default function Catalog() {
       return matchCategory && matchGender && matchStock;
     });
   }, [items, isAdmin, selectedCategory, gender, onlyInStock]);
+
+  useEffect(() => {
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+
+    const saveScrollPosition = () => {
+      try {
+        sessionStorage.setItem(CATALOG_SCROLL_KEY, String(window.scrollY || 0));
+      } catch {
+        // ігноруємо помилки доступу до sessionStorage
+      }
+    };
+
+    window.addEventListener('scroll', saveScrollPosition, { passive: true });
+    return () => {
+      saveScrollPosition();
+      window.removeEventListener('scroll', saveScrollPosition);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!filteredProducts.length) return;
+
+    let targetProductId = '';
+    let savedY = 0;
+
+    try {
+      targetProductId = sessionStorage.getItem(LAST_PRODUCT_ID_KEY) || '';
+      const rawY = sessionStorage.getItem(CATALOG_SCROLL_KEY);
+      savedY = rawY ? Number(rawY) : 0;
+    } catch {
+      targetProductId = '';
+      savedY = 0;
+    }
+
+    const restorePosition = () => {
+      if (targetProductId) {
+        const cardEl = document.querySelector(
+          `[data-product-id="${CSS.escape(targetProductId)}"]`
+        );
+        if (cardEl) {
+          cardEl.scrollIntoView({ behavior: 'auto', block: 'center' });
+          return;
+        }
+      }
+
+      if (savedY && !Number.isNaN(savedY) && savedY > 0) {
+        window.scrollTo({ top: savedY, left: 0, behavior: 'auto' });
+      }
+    };
+
+    const raf1 = requestAnimationFrame(() => {
+      restorePosition();
+      requestAnimationFrame(restorePosition);
+    });
+
+    const timerId = window.setTimeout(restorePosition, 120);
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      window.clearTimeout(timerId);
+    };
+  }, [filteredProducts.length, selectedCategory, gender, onlyInStock]);
 
   const handleReset = () => {
     setSelectedCategory('all');
@@ -312,7 +379,6 @@ export default function Catalog() {
               {editingProduct ? 'Редагувати пару' : 'Нова пара взуття'}
             </h2>
 
-            {/* Вибір виробника та підошви */}
             <div
               style={{
                 backgroundColor: '#f1f5f9',
@@ -388,7 +454,6 @@ export default function Catalog() {
               </div>
             </div>
 
-            {/* Завантаження фото з папки */}
             <div>
               {form.gallery.length > 0 && (
                 <div
@@ -477,7 +542,6 @@ export default function Catalog() {
               style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '8px' }}
             />
 
-            {/* Категорія */}
             <select
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
@@ -495,7 +559,6 @@ export default function Catalog() {
               ))}
             </select>
 
-            {/* Вибір для кого модель: Жінкам / Чоловікам / Обом */}
             <div>
               <span
                 style={{
@@ -538,7 +601,6 @@ export default function Catalog() {
               </div>
             </div>
 
-            {/* Доступні матеріали */}
             <div style={{ display: 'flex', gap: '14px', fontSize: '13px' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <input

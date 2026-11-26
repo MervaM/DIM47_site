@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAdmin } from '../../context/AdminContext';
@@ -13,9 +13,23 @@ const MATERIAL_LABELS = {
 const LINING_LABELS = {
   fleece: { ua: 'Байка', en: 'Fleece' },
   fur: { ua: 'Хутро', en: 'Fur' },
+  teddy: { ua: 'Тедді', en: 'Teddy' },
 };
 
-const compressImageFile = (file, maxWidth = 800, quality = 0.82) =>
+const isBootsCategory = (product) => {
+  const cat = String(product?.category || '').toLowerCase();
+  const titleUa = String(product?.title?.ua || '').toLowerCase();
+  const titleEn = String(product?.title?.en || '').toLowerCase();
+
+  return (
+    cat === 'boots' ||
+    cat.includes('черевик') ||
+    titleUa.includes('черевик') ||
+    titleEn.includes('boot')
+  );
+};
+
+const compressImageFile = (file, maxWidth = 600, quality = 0.68) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -56,7 +70,7 @@ export default function Product() {
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
   const [colorPreviewPhoto, setColorPreviewPhoto] = useState('');
   const [selectedMaterial, setSelectedMaterial] = useState('leather');
-  const [selectedLining, setSelectedLining] = useState('fleece'); // 'fleece' = байка, 'fur' = хутро
+  const [selectedLining, setSelectedLining] = useState(null);
   const [showMoreColors, setShowMoreColors] = useState(false);
   const [selectedColorId, setSelectedColorId] = useState(null);
   const [selectedSize, setSelectedSize] = useState(null);
@@ -64,12 +78,39 @@ export default function Product() {
   const [addedToast, setAddedToast] = useState(false);
   const [isColorPhotosOpen, setIsColorPhotosOpen] = useState(false);
 
+  const photoTouchStartXRef = useRef(null);
+  const photoTouchEndXRef = useRef(null);
+
+  const pageTouchStartRef = useRef(null);
+  const pageTouchCurrentRef = useRef(null);
+
   const mfr = manufacturers[product?.manufacturerId] || manufacturers.m1;
   const activeSole = mfr?.soles?.find((s) => s.id === product?.soleId) || mfr?.soles?.[0];
   const soleBlockedSizes = activeSole?.blockedSizes || [];
 
   const availableMaterials = product?.availableMaterials || ['leather', 'suede'];
-  const availableLinings = product?.availableLinings || ['fleece', 'fur'];
+
+  const isBootModel = Boolean(product && isBootsCategory(product));
+  const isAutoFurPair = Boolean(product?.autoFur);
+
+  const liningMode = useMemo(() => {
+    if (!product) return 'none';
+    if (isAutoFurPair) return 'fur_or_teddy';
+    if (isBootModel) return 'fleece_or_fur';
+    return 'none';
+  }, [product, isAutoFurPair, isBootModel]);
+
+  const allowedLiningOptions = useMemo(() => {
+    if (liningMode === 'fur_or_teddy') {
+      const saved = product?.furOptions || ['fur', 'teddy'];
+      return saved.filter((opt) => opt === 'fur' || opt === 'teddy');
+    }
+    if (liningMode === 'fleece_or_fur') {
+      const saved = product?.availableLinings || ['fleece', 'fur'];
+      return saved.filter((opt) => opt === 'fleece' || opt === 'fur');
+    }
+    return [];
+  }, [liningMode, product?.furOptions, product?.availableLinings]);
 
   const paletteColors = mfr?.palettes?.[selectedMaterial] || [];
   const standardColors = paletteColors.filter((c) => !c.isNonReturnable);
@@ -86,15 +127,42 @@ export default function Product() {
     : [];
 
   useEffect(() => {
+    const scrollToTop = () => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    };
+
+    scrollToTop();
+    const rafId = requestAnimationFrame(scrollToTop);
+    const timerId = window.setTimeout(scrollToTop, 60);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.clearTimeout(timerId);
+    };
+  }, [id]);
+
+  useEffect(() => {
     if (!product) return;
     setActivePhotoIdx(0);
     setColorPreviewPhoto('');
     setShowMoreColors(false);
     const firstMat = availableMaterials[0] || 'leather';
     setSelectedMaterial(firstMat);
-    const firstLin = availableLinings[0] || 'fleece';
-    setSelectedLining(firstLin);
-  }, [product?.id]);
+
+    if (liningMode === 'fur_or_teddy') {
+      const opts = (product?.furOptions || ['fur', 'teddy']).filter(
+        (x) => x === 'fur' || x === 'teddy'
+      );
+      setSelectedLining(opts[0] || 'fur');
+    } else if (liningMode === 'fleece_or_fur') {
+      const opts = (product?.availableLinings || ['fleece', 'fur']).filter(
+        (x) => x === 'fleece' || x === 'fur'
+      );
+      setSelectedLining(opts[0] || 'fleece');
+    } else {
+      setSelectedLining(null);
+    }
+  }, [product?.id, liningMode]);
 
   useEffect(() => {
     setShowMoreColors(false);
@@ -108,6 +176,10 @@ export default function Product() {
       setColorPreviewPhoto(colorPhotosMap[nextId]);
     }
   }, [selectedMaterial, product?.id, mfr?.id]);
+
+  const handleGoBackToCatalog = () => {
+    navigate('/catalog');
+  };
 
   if (!product || (!isAdmin && product.isBlocked)) {
     return (
@@ -135,6 +207,77 @@ export default function Product() {
   const activeColor = paletteColors.find((c) => c.id === selectedColorId);
   const mainDisplayPhoto =
     colorPreviewPhoto || gallery[activePhotoIdx] || product.image;
+
+  const handleSlideBy = (delta) => {
+    if (gallery.length <= 1) return;
+    setColorPreviewPhoto('');
+    setActivePhotoIdx((prev) => {
+      const current = colorPreviewPhoto ? 0 : prev;
+      return (current + delta + gallery.length) % gallery.length;
+    });
+  };
+
+  const handlePhotoTouchStart = (e) => {
+    if (gallery.length <= 1) return;
+    photoTouchStartXRef.current = e.touches[0]?.clientX ?? null;
+    photoTouchEndXRef.current = null;
+  };
+
+  const handlePhotoTouchMove = (e) => {
+    if (gallery.length <= 1) return;
+    photoTouchEndXRef.current = e.touches[0]?.clientX ?? null;
+  };
+
+  const handlePhotoTouchEnd = () => {
+    if (
+      gallery.length <= 1 ||
+      photoTouchStartXRef.current === null ||
+      photoTouchEndXRef.current === null
+    ) {
+      photoTouchStartXRef.current = null;
+      photoTouchEndXRef.current = null;
+      return;
+    }
+
+    const diffX = photoTouchStartXRef.current - photoTouchEndXRef.current;
+    if (Math.abs(diffX) >= 40) {
+      handleSlideBy(diffX > 0 ? 1 : -1);
+    }
+
+    photoTouchStartXRef.current = null;
+    photoTouchEndXRef.current = null;
+  };
+
+  const handlePageTouchStart = (e) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    pageTouchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    pageTouchCurrentRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handlePageTouchMove = (e) => {
+    const touch = e.touches[0];
+    if (!touch || !pageTouchStartRef.current) return;
+    pageTouchCurrentRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handlePageTouchEnd = () => {
+    if (!pageTouchStartRef.current || !pageTouchCurrentRef.current) {
+      pageTouchStartRef.current = null;
+      pageTouchCurrentRef.current = null;
+      return;
+    }
+
+    const deltaX = pageTouchCurrentRef.current.x - pageTouchStartRef.current.x;
+    const deltaY = Math.abs(pageTouchCurrentRef.current.y - pageTouchStartRef.current.y);
+
+    if (deltaX >= 80 && deltaX > deltaY * 1.4) {
+      handleGoBackToCatalog();
+    }
+
+    pageTouchStartRef.current = null;
+    pageTouchCurrentRef.current = null;
+  };
 
   const handleSelectColor = (color) => {
     if (color.isNonReturnable) {
@@ -245,16 +388,41 @@ export default function Product() {
     });
   };
 
-  const toggleLiningAvailability = (liningKey) => {
-    const exists = availableLinings.includes(liningKey);
-    if (exists && availableLinings.length === 1) return;
-    const updated = exists
-      ? availableLinings.filter((l) => l !== liningKey)
-      : [...availableLinings, liningKey];
-    updateProduct(product.id, { availableLinings: updated });
-    if (!updated.includes(selectedLining)) {
-      setSelectedLining(updated[0]);
+  const toggleLiningOptionForProduct = (optionKey) => {
+    if (liningMode === 'fur_or_teddy') {
+      const current = product?.furOptions || ['fur', 'teddy'];
+      const exists = current.includes(optionKey);
+      if (exists && current.length === 1) return;
+      const updated = exists
+        ? current.filter((item) => item !== optionKey)
+        : [...current, optionKey];
+      updateProduct(product.id, { furOptions: updated });
+      if (!updated.includes(selectedLining)) {
+        setSelectedLining(updated[0]);
+      }
+      return;
     }
+
+    if (liningMode === 'fleece_or_fur') {
+      const current = product?.availableLinings || ['fleece', 'fur'];
+      const exists = current.includes(optionKey);
+      if (exists && current.length === 1) return;
+      const updated = exists
+        ? current.filter((item) => item !== optionKey)
+        : [...current, optionKey];
+      updateProduct(product.id, { availableLinings: updated });
+      if (!updated.includes(selectedLining)) {
+        setSelectedLining(updated[0]);
+      }
+    }
+  };
+
+  const toggleAutoFurForProduct = () => {
+    const nextAutoFur = !isAutoFurPair;
+    updateProduct(product.id, {
+      autoFur: nextAutoFur,
+      furOptions: product?.furOptions || ['fur', 'teddy'],
+    });
   };
 
   const handleAddToCart = () => {
@@ -267,8 +435,13 @@ export default function Product() {
       return;
     }
 
+    const effectiveLining =
+      liningMode === 'none'
+        ? null
+        : selectedLining || allowedLiningOptions[0] || 'fur';
+
     const cartItemPayload = {
-      cartItemKey: `${product.id}__${selectedMaterial}__${selectedLining}__${activeColor.id}__${selectedSize}`,
+      cartItemKey: `${product.id}__${selectedMaterial}__${effectiveLining || 'standard'}__${activeColor.id}__${selectedSize}`,
       productId: product.id,
       manufacturerId: mfr.id,
       manufacturerName: mfr.name,
@@ -278,8 +451,10 @@ export default function Product() {
       colorSwatchUrl: activeColor.imageUrl || '',
       material: selectedMaterial,
       materialLabel: MATERIAL_LABELS[selectedMaterial] || { ua: selectedMaterial, en: selectedMaterial },
-      lining: selectedLining,
-      liningLabel: LINING_LABELS[selectedLining] || { ua: selectedLining, en: selectedLining },
+      lining: effectiveLining,
+      liningLabel: effectiveLining
+        ? LINING_LABELS[effectiveLining] || { ua: effectiveLining, en: effectiveLining }
+        : null,
       colorId: activeColor.id,
       colorName: activeColor.name,
       isNonReturnable: Boolean(activeColor.isNonReturnable),
@@ -297,11 +472,16 @@ export default function Product() {
   const attachedCountInPalette = paletteColors.filter((c) => colorPhotosMap[c.id]).length;
 
   return (
-    <section className="product-page">
+    <section
+      className="product-page"
+      onTouchStart={handlePageTouchStart}
+      onTouchMove={handlePageTouchMove}
+      onTouchEnd={handlePageTouchEnd}
+    >
       <div className="container">
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={handleGoBackToCatalog}
           className="product-page__back"
         >
           ← {lang === 'ua' ? 'Назад' : 'Back'}
@@ -309,12 +489,38 @@ export default function Product() {
 
         <div className="product-page__grid">
           <div className="product-page__gallery">
-            <div className="product-page__media">
+            <div
+              className="product-page__media"
+              onTouchStart={handlePhotoTouchStart}
+              onTouchMove={handlePhotoTouchMove}
+              onTouchEnd={handlePhotoTouchEnd}
+            >
               <img
                 src={mainDisplayPhoto}
                 alt={product.title[lang]}
                 className="product-page__img"
               />
+
+              {gallery.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    aria-label={lang === 'ua' ? 'Попереднє фото' : 'Previous photo'}
+                    onClick={() => handleSlideBy(-1)}
+                    className="product-page__slider-btn product-page__slider-btn--prev"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={lang === 'ua' ? 'Наступне фото' : 'Next photo'}
+                    onClick={() => handleSlideBy(1)}
+                    className="product-page__slider-btn product-page__slider-btn--next"
+                  >
+                    ›
+                  </button>
+                </>
+              )}
             </div>
 
             <div className="product-page__thumbs">
@@ -381,7 +587,6 @@ export default function Product() {
               </p>
             </div>
 
-            {/* Шкіра / Замша (без слова "Матеріал") */}
             <div className="product-page__section">
               <div className="product-page__materials">
                 {availableMaterials.includes('leather') && (
@@ -409,35 +614,25 @@ export default function Product() {
               </div>
             </div>
 
-            {/* Вибір утеплювача: Байка / Хутро */}
-            <div className="product-page__section">
-              <div className="product-page__materials">
-                {availableLinings.includes('fleece') && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLining('fleece')}
-                    className={`product-page__material-btn ${
-                      selectedLining === 'fleece' ? 'is-active' : ''
-                    }`}
-                  >
-                    {lang === 'ua' ? 'Байка' : 'Fleece'}
-                  </button>
-                )}
-                {availableLinings.includes('fur') && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLining('fur')}
-                    className={`product-page__material-btn ${
-                      selectedLining === 'fur' ? 'is-active' : ''
-                    }`}
-                  >
-                    {lang === 'ua' ? 'Хутро' : 'Fur'}
-                  </button>
-                )}
+            {liningMode !== 'none' && allowedLiningOptions.length > 0 && (
+              <div className="product-page__section">
+                <div className="product-page__materials">
+                  {allowedLiningOptions.map((optKey) => (
+                    <button
+                      key={optKey}
+                      type="button"
+                      onClick={() => setSelectedLining(optKey)}
+                      className={`product-page__material-btn ${
+                        selectedLining === optKey ? 'is-active' : ''
+                      }`}
+                    >
+                      {LINING_LABELS[optKey]?.[lang] || optKey}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Кольори: звичайні одразу + "Більше кольорів" для позицій без обміну і повернення */}
             <div className="product-page__section">
               <div className="product-page__label">
                 <span>{lang === 'ua' ? 'Колір' : 'Color'}</span>
@@ -499,7 +694,6 @@ export default function Product() {
               )}
             </div>
 
-            {/* Розмір */}
             <div className="product-page__section">
               <div className="product-page__label">
                 <span>{lang === 'ua' ? 'Розмір' : 'Size'}</span>
@@ -579,7 +773,6 @@ export default function Product() {
                   </button>
                 </div>
 
-                {/* Прихована "папка" фото пари під кожен колір */}
                 <div
                   style={{
                     border: '1px solid #cbd5e1',
@@ -769,31 +962,90 @@ export default function Product() {
                   </div>
                 </div>
 
-                {/* Доступні утеплювачі для пари */}
                 <div>
-                  <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>
-                    Доступні утеплювачі для цієї пари:
-                  </p>
-                  <div className="product-page__admin-chips">
-                    <button
-                      type="button"
-                      onClick={() => toggleLiningAvailability('fleece')}
-                      className={`product-page__admin-chip ${
-                        !availableLinings.includes('fleece') ? 'is-blocked' : ''
-                      }`}
-                    >
-                      Байка
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleLiningAvailability('fur')}
-                      className={`product-page__admin-chip ${
-                        !availableLinings.includes('fur') ? 'is-blocked' : ''
-                      }`}
-                    >
-                      Хутро
-                    </button>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '8px',
+                      marginBottom: '6px',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                      {liningMode === 'fur_or_teddy'
+                        ? 'Пара з хутром — яке хутро активне / заблоковане:'
+                        : liningMode === 'fleece_or_fur'
+                        ? 'Черевики — доступні варіанти для цієї пари:'
+                        : 'Утеплювач для пари:'}
+                    </p>
+
+                    {!isBootModel && (
+                      <button
+                        type="button"
+                        onClick={toggleAutoFurForProduct}
+                        style={{
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          border: '1px solid #cbd5e1',
+                          backgroundColor: isAutoFurPair ? '#fef3c7' : '#fff',
+                          color: isAutoFurPair ? '#92400e' : '#475569',
+                        }}
+                      >
+                        {isAutoFurPair ? '✓ Йде з хутром (Хутро / Тедді)' : '+ Зробити парою з хутром'}
+                      </button>
+                    )}
                   </div>
+
+                  {liningMode === 'fur_or_teddy' && (
+                    <div className="product-page__admin-chips">
+                      {['fur', 'teddy'].map((furKey) => {
+                        const isActive = (product?.furOptions || ['fur', 'teddy']).includes(furKey);
+                        return (
+                          <button
+                            key={furKey}
+                            type="button"
+                            onClick={() => toggleLiningOptionForProduct(furKey)}
+                            className={`product-page__admin-chip ${!isActive ? 'is-blocked' : ''}`}
+                            title={
+                              isActive
+                                ? 'Натисни, щоб заблокувати для цієї пари'
+                                : 'Натисни, щоб активувати для цієї пари'
+                            }
+                          >
+                            {LINING_LABELS[furKey]?.ua} {isActive ? '(активне)' : '(стоп)'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {liningMode === 'fleece_or_fur' && (
+                    <div className="product-page__admin-chips">
+                      {['fleece', 'fur'].map((linKey) => {
+                        const isActive = (product?.availableLinings || ['fleece', 'fur']).includes(linKey);
+                        return (
+                          <button
+                            key={linKey}
+                            type="button"
+                            onClick={() => toggleLiningOptionForProduct(linKey)}
+                            className={`product-page__admin-chip ${!isActive ? 'is-blocked' : ''}`}
+                          >
+                            {LINING_LABELS[linKey]?.ua}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {liningMode === 'none' && (
+                    <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0 }}>
+                      Для цієї категорії вибір байки/хутра на вітрині вимкнено (активуй «Йде з хутром», якщо модель хутряна).
+                    </p>
+                  )}
                 </div>
 
                 <div>

@@ -3,9 +3,21 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useAdmin } from '../../context/AdminContext';
 import './ProductCard.scss';
 
+export const LAST_PRODUCT_ID_KEY = 'dim47_last_catalog_product_id';
+export const CATALOG_SCROLL_KEY = 'dim47_catalog_scroll';
+
 export default function ProductCard({ product, onEdit }) {
   const { lang, t } = useLanguage();
   const { isAdmin, toggleBlockProduct, deleteProduct } = useAdmin();
+
+  const handleOpenProduct = () => {
+    try {
+      sessionStorage.setItem(LAST_PRODUCT_ID_KEY, String(product.id));
+      sessionStorage.setItem(CATALOG_SCROLL_KEY, String(window.scrollY || 0));
+    } catch {
+      // ігноруємо помилки sessionStorage
+    }
+  };
 
   const handleDelete = () => {
     const confirmed = window.confirm(
@@ -18,10 +30,15 @@ export default function ProductCard({ product, onEdit }) {
 
   return (
     <div
+      data-product-id={product.id}
       className="product-card"
       style={{ opacity: product.isBlocked ? 0.55 : 1 }}
     >
-      <Link to={`/product/${product.id}`} className="product-card__link">
+      <Link
+        to={`/product/${product.id}`}
+        className="product-card__link"
+        onClick={handleOpenProduct}
+      >
         <div className="product-card__media">
           <img
             src={product.image}
