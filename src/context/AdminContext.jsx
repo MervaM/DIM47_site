@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { supabase } from '../lib/supabase';
 
 const AdminContext = createContext();
 
@@ -104,9 +105,10 @@ const normalizeManufacturers = (parsed) => {
   for (const mfrId of ['m1', 'm2']) {
     const baseMfr = defaultManufacturers[mfrId];
     const savedMfr = parsed?.[mfrId] || {};
-    const rawSoles = Array.isArray(savedMfr.soles) && savedMfr.soles.length
-      ? savedMfr.soles
-      : baseMfr.soles;
+    const rawSoles =
+      Array.isArray(savedMfr.soles) && savedMfr.soles.length
+        ? savedMfr.soles
+        : baseMfr.soles;
 
     const normalizedSoles = rawSoles.map((sole, idx) => ({
       ...sole,
@@ -210,6 +212,85 @@ export function AdminProvider({ children }) {
     return defaultHeroData;
   });
 
+  const isCloudHydrated = useRef(false);
+
+  // Завантаження даних із Supabase при відкритті сайту
+  useEffect(() => {
+    if (!supabase) {
+      isCloudHydrated.current = true;
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadFromSupabase = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('store_state')
+          .select('id, data');
+
+        if (error) {
+          console.warn('Supabase load warning:', error.message);
+          isCloudHydrated.current = true;
+          return;
+        }
+
+        if (cancelled) return;
+
+        const map = {};
+        for (const row of data || []) {
+          map[row.id] = row.data;
+        }
+
+        if (Array.isArray(map.products)) {
+          setItems(map.products);
+        }
+        if (map.manufacturers && (map.manufacturers.m1 || map.manufacturers.m2)) {
+          setManufacturers(normalizeManufacturers(map.manufacturers));
+        }
+        if (map.hero_data && typeof map.hero_data === 'object') {
+          setHeroData((prev) => ({
+            ...prev,
+            ...map.hero_data,
+          }));
+        }
+      } catch (err) {
+        console.warn('Supabase fetch error:', err);
+      } finally {
+        if (!cancelled) {
+          isCloudHydrated.current = true;
+        }
+      }
+    };
+
+    loadFromSupabase();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const syncStateToSupabase = async (key, payload) => {
+    if (!supabase || !isCloudHydrated.current) return;
+    try {
+      const { error } = await supabase
+        .from('store_state')
+        .upsert(
+          {
+            id: key,
+            data: payload,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
+      if (error) {
+        console.warn(`Supabase sync (${key}) warning:`, error.message);
+      }
+    } catch (err) {
+      console.warn(`Supabase sync (${key}) error:`, err);
+    }
+  };
+
   useEffect(() => {
     safeSetStorage('dim47_is_admin', String(isAdmin));
   }, [isAdmin]);
@@ -224,10 +305,12 @@ export function AdminProvider({ children }) {
 
   useEffect(() => {
     safeSetStorage('dim47_manufacturers', JSON.stringify(manufacturers));
+    syncStateToSupabase('manufacturers', manufacturers);
   }, [manufacturers]);
 
   useEffect(() => {
     safeSetStorage('dim47_products', JSON.stringify(items));
+    syncStateToSupabase('products', items);
   }, [items]);
 
   useEffect(() => {
@@ -238,6 +321,7 @@ export function AdminProvider({ children }) {
       subtitle: heroData.subtitle,
     };
     safeSetStorage('dim47_banner', JSON.stringify(legacyBanner));
+    syncStateToSupabase('hero_data', heroData);
   }, [heroData]);
 
   const login = (inputPin) => {

@@ -3,33 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAdmin } from '../../context/AdminContext';
 import { CATEGORIES } from '../../data/products';
+import { uploadVaultImage } from '../../lib/supabase';
 import ProductCard, {
   LAST_PRODUCT_ID_KEY,
   CATALOG_SCROLL_KEY,
 } from '../../components/ProductCard/ProductCard';
 import './Catalog.scss';
-
-const compressImageFile = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const maxWidth = 800;
-        const scale = img.width > maxWidth ? maxWidth / img.width : 1;
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width * scale;
-        canvas.height = img.height * scale;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.82));
-      };
-      img.onerror = reject;
-      img.src = event.target.result;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 
 export default function Catalog() {
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -38,6 +17,7 @@ export default function Catalog() {
   const { isAdmin, items, manufacturers, addProduct, updateProduct } = useAdmin();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [form, setForm] = useState({
     manufacturerId: 'm1',
@@ -205,16 +185,20 @@ export default function Catalog() {
   const handleFilesChange = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
+    setIsUploadingPhotos(true);
     try {
-      const compressed = await Promise.all(
-        files.map((f) => compressImageFile(f))
+      const uploadedUrls = await Promise.all(
+        files.map((f) => uploadVaultImage(f, 'catalog', 900))
       );
       setForm((prev) => ({
         ...prev,
-        gallery: [...prev.gallery, ...compressed],
+        gallery: [...prev.gallery, ...uploadedUrls],
       }));
     } catch {
       alert('Не вдалося завантажити фото.');
+    } finally {
+      setIsUploadingPhotos(false);
+      e.target.value = '';
     }
   };
 
@@ -517,11 +501,14 @@ export default function Catalog() {
                   color: '#2b4c6f',
                 }}
               >
-                + Додати фото з папки (можна обрати кілька одразу)
+                {isUploadingPhotos
+                  ? 'Завантаження фото у хмару...'
+                  : '+ Додати фото з папки (можна обрати кілька одразу)'}
                 <input
                   type="file"
                   accept="image/*"
                   multiple
+                  disabled={isUploadingPhotos}
                   onChange={handleFilesChange}
                   style={{ display: 'none' }}
                 />
@@ -650,6 +637,7 @@ export default function Catalog() {
               </button>
               <button
                 type="submit"
+                disabled={isUploadingPhotos}
                 style={{
                   flex: 1,
                   padding: '10px',
@@ -659,7 +647,7 @@ export default function Catalog() {
                   fontWeight: 600,
                 }}
               >
-                Зберегти
+                {isUploadingPhotos ? 'Зачекайте...' : 'Зберегти'}
               </button>
             </div>
           </form>

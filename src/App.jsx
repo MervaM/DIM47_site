@@ -11,6 +11,7 @@ import Product from './pages/Product/Product';
 import Cart from './pages/Cart/Cart';
 import Constructor from './pages/Constructor/Constructor';
 import AdminLogin from './pages/AdminLogin/AdminLogin';
+import Vault from './pages/Vault/Vault';
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
                   <Route path="/constructor" element={<Constructor />} />
                   <Route path="/cart" element={<Cart />} />
                   <Route path="/admin" element={<AdminLogin />} />
+                  <Route path="/vault" element={<Vault />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </main>
