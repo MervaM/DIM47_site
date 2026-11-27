@@ -313,6 +313,12 @@ export default function Home() {
             >
               <img
                 src={src}
+                alt=""
+                aria-hidden="true"
+                className="hero__slide__bg"
+              />
+              <img
+                src={src}
                 alt={`DiM47 slide ${idx + 1}`}
                 className="hero__slide__img"
               />
