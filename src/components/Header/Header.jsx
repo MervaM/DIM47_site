@@ -70,8 +70,8 @@ export default function Header() {
         <button
           type="button"
           className={`header__burger ${isMenuOpen ? 'is-active' : ''}`}
-          onClick={() => setIsMenuOpen((prev) => !prev)}
-          aria-label={isMenuOpen ? t.closeMenu : t.openMenu}
+          onClick={() => setIsMenuOpen(true)}
+          aria-label={t.openMenu}
           aria-expanded={isMenuOpen}
         >
           <span />
@@ -143,6 +143,17 @@ export default function Header() {
           aria-label="Primary navigation"
           className={`header__nav ${isMenuOpen ? 'is-open' : ''}`}
         >
+          <div className="header__drawer-top">
+            <button
+              type="button"
+              className="header__close-btn"
+              onClick={() => setIsMenuOpen(false)}
+              aria-label={t.closeMenu}
+            >
+              ×
+            </button>
+          </div>
+
           <ul className="header__list">
             <li>
               <NavLink to="/" className="header__link" end>
@@ -249,12 +260,10 @@ export default function Header() {
           </div>
         </nav>
 
-        {isMenuOpen && (
-          <div
-            className="header__backdrop"
-            onClick={() => setIsMenuOpen(false)}
-          />
-        )}
+        <div
+          className={`header__backdrop ${isMenuOpen ? 'is-open' : ''}`}
+          onClick={() => setIsMenuOpen(false)}
+        />
 
         <Link to="/cart" className="header__cart" aria-label={t.cartAria}>
           <svg
