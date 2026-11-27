@@ -13,7 +13,6 @@ export default function Header() {
   const { isAdmin } = useAdmin();
   const { totalCount } = useCart();
 
-  const noticeRef = useRef(null);
   const clickCountRef = useRef(0);
   const clickTimerRef = useRef(null);
 
@@ -29,35 +28,6 @@ export default function Header() {
       document.body.style.overflow = '';
     };
   }, [isMenuOpen]);
-
-  // Синхронізуємо висоту верхньої смужки з CSS-змінною для мобільного меню
-  useEffect(() => {
-    const root = document.documentElement;
-    const el = noticeRef.current;
-    if (!el) {
-      root.style.setProperty('--notice-bar-height', '0px');
-      return;
-    }
-
-    const updateNoticeHeight = () => {
-      if (noticeRef.current) {
-        const height = Math.ceil(noticeRef.current.getBoundingClientRect().height);
-        root.style.setProperty('--notice-bar-height', `${height}px`);
-      }
-    };
-
-    updateNoticeHeight();
-
-    const observer = new ResizeObserver(updateNoticeHeight);
-    observer.observe(el);
-    window.addEventListener('resize', updateNoticeHeight);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', updateNoticeHeight);
-      root.style.setProperty('--notice-bar-height', '0px');
-    };
-  }, [lang]);
 
   // Очищуємо таймер кліків при розмонтуванні компонента
   useEffect(() => {
@@ -96,7 +66,7 @@ export default function Header() {
 
   return (
     <header className={headerClasses}>
-      <div ref={noticeRef} className="header__notice">
+      <div className="header__notice">
         <div className="container header__notice-inner">{noticeText}</div>
       </div>
 

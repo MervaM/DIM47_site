@@ -3,8 +3,6 @@
   --header-yellow: #fbf3d1;
   --header-yellow-muted: rgba(251, 243, 209, 0.78);
   --header-mobile-height: 62px;
-  --header-top-offset: calc(var(--notice-bar-height, 0px) + var(--header-mobile-height));
-  --mobile-menu-top: calc(var(--header-top-offset) + var(--admin-bar-height, 0px));
 
   position: sticky;
   top: 0;
@@ -57,7 +55,7 @@
     justify-content: center;
     align-items: center;
     gap: 5px;
-    z-index: 120;
+    z-index: 130;
 
     span {
       display: block;
@@ -90,7 +88,7 @@
     display: flex;
     align-items: center;
     color: var(--header-yellow);
-    z-index: 120;
+    z-index: 130;
     transition: opacity 0.2s ease, visibility 0.2s ease;
 
     &:hover {
@@ -122,27 +120,35 @@
   /* Навігація */
   &__nav {
     position: fixed;
-    top: var(--mobile-menu-top);
+    top: 0;
     left: 0;
     width: 82%;
     max-width: 340px;
-    height: calc(100svh - var(--mobile-menu-top));
+    height: 100dvh;
     background-color: var(--header-bg);
     border-right: 1px solid rgba(251, 243, 209, 0.25);
-    padding: 24px 20px;
+    padding: calc(var(--header-mobile-height) + 28px) 20px 24px;
     display: flex;
     flex-direction: column;
     gap: 24px;
     overflow-y: auto;
     transform: translateX(-100%);
     transition: transform 0.3s ease;
-    z-index: 115;
+    z-index: 120;
 
     &.is-open {
       transform: translateX(0);
     }
 
     @media (min-width: 1024px) {
+      position: static;
+      width: auto;
+      max-width: none;
+      height: auto;
+      padding: 0;
+      overflow: visible;
+      border-right: none;
+      background-color: transparent;
       display: contents;
       transform: none;
     }
@@ -301,12 +307,9 @@
   /* Затемнення фону */
   &__backdrop {
     position: fixed;
-    top: var(--mobile-menu-top);
-    right: 0;
-    bottom: 0;
-    left: 0;
+    inset: 0;
     background-color: rgba(0, 0, 0, 0.35);
-    z-index: 112;
+    z-index: 115;
 
     @media (min-width: 1024px) {
       display: none;
@@ -323,7 +326,7 @@
     align-items: center;
     justify-content: center;
     color: var(--header-yellow);
-    z-index: 120;
+    z-index: 130;
 
     @media (min-width: 1024px) {
       order: 5;
