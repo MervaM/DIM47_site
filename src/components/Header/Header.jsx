@@ -16,12 +16,10 @@ export default function Header() {
   const clickCountRef = useRef(0);
   const clickTimerRef = useRef(null);
 
-  // Закриваємо мобільне меню при зміні сторінки
   useEffect(() => {
     setIsMenuOpen(false);
   }, [location.pathname, location.search]);
 
-  // Блокуємо скрол фону, коли меню відкрите
   useEffect(() => {
     document.body.style.overflow = isMenuOpen ? 'hidden' : '';
     return () => {
@@ -29,12 +27,10 @@ export default function Header() {
     };
   }, [isMenuOpen]);
 
-  // Очищуємо таймер кліків при розмонтуванні компонента
   useEffect(() => {
     return () => clearTimeout(clickTimerRef.current);
   }, []);
 
-  // 3 швидкі кліки на логотип DiM47 відкривають сторінку входу адміністратора
   const handleLogoClick = (e) => {
     clickCountRef.current += 1;
     clearTimeout(clickTimerRef.current);
@@ -71,7 +67,6 @@ export default function Header() {
       </div>
 
       <div className="container header__inner">
-        {/* Бургер-кнопка (мобільна версія) */}
         <button
           type="button"
           className={`header__burger ${isMenuOpen ? 'is-active' : ''}`}
@@ -84,7 +79,6 @@ export default function Header() {
           <span />
         </button>
 
-        {/* Фірмовий логотип DiM47 з піном */}
         <Link
           to="/"
           className="header__logo"
@@ -97,14 +91,12 @@ export default function Header() {
             xmlns="http://www.w3.org/2000/svg"
             className="header__logo-svg"
           >
-            {/* D */}
             <path
               d="M12 24H36C45 24 51 30 51 41C51 52 45 58 36 58H12V24Z"
               stroke="currentColor"
               strokeWidth="4.5"
               strokeLinejoin="round"
             />
-            {/* i */}
             <circle cx="67" cy="24" r="2.8" fill="currentColor" />
             <line
               x1="67"
@@ -115,7 +107,6 @@ export default function Header() {
               strokeWidth="4.5"
               strokeLinecap="round"
             />
-            {/* M */}
             <path
               d="M85 58V24L104 43L123 24V58"
               stroke="currentColor"
@@ -123,7 +114,6 @@ export default function Header() {
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            {/* 4 */}
             <path
               d="M162 58V24L138 48H169"
               stroke="currentColor"
@@ -131,7 +121,6 @@ export default function Header() {
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            {/* 7 */}
             <path
               d="M179 24H209L190 58"
               stroke="currentColor"
@@ -139,7 +128,6 @@ export default function Header() {
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            {/* Піктограма геолокації */}
             <path
               d="M226 32C226 32 235 22.5 235 16C235 11.0294 230.971 7 226 7C221.029 7 217 11.0294 217 16C217 22.5 226 32 226 32Z"
               stroke="currentColor"
@@ -150,7 +138,6 @@ export default function Header() {
           </svg>
         </Link>
 
-        {/* Основне меню навігації */}
         <nav
           id="mobile-header-nav"
           aria-label="Primary navigation"
@@ -191,7 +178,6 @@ export default function Header() {
             </li>
           </ul>
 
-          {/* Кнопки вибору статі: у бургері на телефоні, ліворуч від логотипа на десктопі */}
           <div className="header__gender">
             <button
               type="button"
@@ -244,7 +230,6 @@ export default function Header() {
             </button>
           </div>
 
-          {/* Перемикач мови UA / EN */}
           <div className="header__lang">
             <button
               type="button"
@@ -264,7 +249,6 @@ export default function Header() {
           </div>
         </nav>
 
-        {/* Затемнення фону */}
         {isMenuOpen && (
           <div
             className="header__backdrop"
@@ -272,7 +256,6 @@ export default function Header() {
           />
         )}
 
-        {/* Кошик */}
         <Link to="/cart" className="header__cart" aria-label={t.cartAria}>
           <svg
             width="23"

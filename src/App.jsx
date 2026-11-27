@@ -5,6 +5,7 @@ import { CartProvider } from './context/CartContext';
 import AdminBar from './components/AdminBar/AdminBar';
 import Header from './components/Header/Header';
 import Footer from './components/Footer/Footer';
+import ScrollToTopButton from './components/ScrollToTopButton/ScrollToTopButton';
 import Home from './pages/Home/Home';
 import Catalog from './pages/Catalog/Catalog';
 import Product from './pages/Product/Product';
@@ -35,6 +36,7 @@ function App() {
                 </Routes>
               </main>
               <Footer />
+              <ScrollToTopButton />
             </div>
           </BrowserRouter>
         </CartProvider>
