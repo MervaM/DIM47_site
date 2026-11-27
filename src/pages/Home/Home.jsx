@@ -313,18 +313,17 @@ export default function Home() {
             >
               <img
                 src={src}
-                alt=""
-                aria-hidden="true"
-                className="hero__slide__backdrop"
-              />
-              <img
-                src={src}
                 alt={`DiM47 slide ${idx + 1}`}
                 className="hero__slide__img"
               />
             </div>
           ))}
           <div className="hero__overlay" />
+        </div>
+
+        <div className="hero__content">
+          <h1 className="hero__title">{heroData?.title?.[lang] || ''}</h1>
+          <p className="hero__subtitle">{heroData?.subtitle?.[lang] || ''}</p>
         </div>
 
         {slides.length > 1 && (
@@ -363,21 +362,16 @@ export default function Home() {
         )}
       </div>
 
-      <div className="hero__content">
-        <h1 className="hero__title">{heroData?.title?.[lang] || ''}</h1>
-        <p className="hero__subtitle">{heroData?.subtitle?.[lang] || ''}</p>
-
-        <div className="hero__mobile-actions">
-          <Link to="/catalog" className="hero__btn hero__btn--primary">
-            {t?.catalog || (lang === 'ua' ? 'Каталог' : 'Catalog')}
-          </Link>
-          <Link to="/catalog?inStock=true" className="hero__btn hero__btn--secondary">
-            {t?.inStock || (lang === 'ua' ? 'Наявність' : 'In Stock')}
-          </Link>
-          <Link to="/constructor" className="hero__btn hero__btn--secondary">
-            {t?.constructor || (lang === 'ua' ? 'Конструктор' : 'Constructor')}
-          </Link>
-        </div>
+      <div className="hero__mobile-actions">
+        <Link to="/catalog" className="hero__btn hero__btn--primary">
+          {t?.catalog || (lang === 'ua' ? 'Каталог' : 'Catalog')}
+        </Link>
+        <Link to="/catalog?inStock=true" className="hero__btn hero__btn--secondary">
+          {t?.inStock || (lang === 'ua' ? 'Наявність' : 'In Stock')}
+        </Link>
+        <Link to="/constructor" className="hero__btn hero__btn--secondary">
+          {t?.constructor || (lang === 'ua' ? 'Конструктор' : 'Constructor')}
+        </Link>
       </div>
 
       {isAdmin && isAdminModalOpen && (

@@ -11,7 +11,7 @@
     height: calc(100svh - var(--header-top-offset, 86px) - var(--admin-bar-height, 0px));
     min-height: 360px;
     overflow: hidden;
-    background-color: #f1f5f9;
+    background-color: #1e293b;
     display: flex;
 
     @media (min-width: 768px) and (max-width: 1023px) {
@@ -54,32 +54,18 @@
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.45s ease, visibility 0.45s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
 
     &.is-active {
       opacity: 1;
       visibility: visible;
     }
 
-    &__backdrop {
-      position: absolute;
-      inset: 0;
+    &__img {
+      display: block;
       width: 100%;
       height: 100%;
       object-fit: cover;
-      filter: blur(22px) brightness(0.92);
-      transform: scale(1.12);
-      pointer-events: none;
-    }
-
-    &__img {
-      position: relative;
-      z-index: 1;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
+      object-position: center;
     }
   }
 
@@ -88,15 +74,12 @@
     inset: 0;
     z-index: 2;
     pointer-events: none;
-
-    @media (min-width: 1024px) {
-      background: radial-gradient(
-        circle at center,
-        rgba(15, 23, 42, 0.42) 0%,
-        rgba(15, 23, 42, 0.18) 65%,
-        rgba(15, 23, 42, 0.08) 100%
-      );
-    }
+    background: radial-gradient(
+      circle at center,
+      rgba(15, 23, 42, 0.46) 0%,
+      rgba(15, 23, 42, 0.24) 65%,
+      rgba(15, 23, 42, 0.14) 100%
+    );
   }
 
   &__arrow {
@@ -154,27 +137,31 @@
   }
 
   &__content {
-    background-color: var(--bg-primary, #ffffff);
-    color: var(--text-primary, #111111);
-    padding: 32px 16px 28px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 8;
+    width: min(860px, calc(100% - 48px));
+    padding: 20px 16px;
     text-align: center;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 12px;
+    gap: 10px;
+    color: #ffffff;
+    pointer-events: none;
+
+    @media (min-width: 768px) {
+      width: min(860px, calc(100% - 56px));
+      padding: 24px 24px;
+      gap: 14px;
+    }
 
     @media (min-width: 1024px) {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      z-index: 8;
       width: min(860px, calc(100% - 64px));
       padding: 28px 36px;
-      background-color: transparent;
-      color: #ffffff;
-      pointer-events: none;
       gap: 16px;
     }
   }
@@ -182,44 +169,44 @@
   &__title {
     font-size: 26px;
     font-weight: 700;
-    line-height: 1.25;
-    color: #111111;
+    line-height: 1.2;
+    color: #ffffff;
+    text-shadow: 0 3px 16px rgba(0, 0, 0, 0.6);
 
     @media (min-width: 768px) {
-      font-size: 34px;
+      font-size: 36px;
     }
 
     @media (min-width: 1024px) {
       font-size: 52px;
       line-height: 1.15;
-      color: #ffffff;
-      text-shadow: 0 3px 18px rgba(0, 0, 0, 0.55);
     }
   }
 
   &__subtitle {
     max-width: 560px;
     font-size: 14px;
-    line-height: 1.55;
-    color: #475569;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.96);
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
 
     @media (min-width: 768px) {
-      font-size: 16px;
+      max-width: 660px;
+      font-size: 17px;
     }
 
     @media (min-width: 1024px) {
       max-width: 720px;
       font-size: 22px;
       line-height: 1.45;
-      color: rgba(255, 255, 255, 0.95);
-      text-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
     }
   }
 
   &__mobile-actions {
     width: 100%;
     max-width: 360px;
-    margin-top: 12px;
+    margin: 24px auto 28px;
+    padding: 0 16px;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -235,7 +222,6 @@
       display: none;
     }
 
-    /* Коли наводять на іншу кнопку — Каталог стає білим, а активна/наведена кнопка синіє з білим текстом */
     &:hover .hero__btn--primary:not(:hover) {
       background-color: #ffffff;
       color: #1e293b;

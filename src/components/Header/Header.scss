@@ -3,6 +3,8 @@
   --header-yellow: #fbf3d1;
   --header-yellow-muted: rgba(251, 243, 209, 0.78);
   --header-mobile-height: 62px;
+  --header-top-offset: calc(var(--notice-bar-height, 0px) + var(--header-mobile-height));
+  --mobile-menu-top: calc(var(--header-top-offset) + var(--admin-bar-height, 0px));
 
   position: sticky;
   top: 0;
@@ -11,7 +13,6 @@
   color: var(--header-yellow);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
 
-  /* Тоненька верхня смужка з тлом як у body */
   &__notice {
     background-color: var(--body-bg, #ffffff);
     color: var(--body-color, #1e293b);
@@ -45,7 +46,6 @@
     }
   }
 
-  /* Бургер-кнопка */
   &__burger {
     width: 38px;
     height: 38px;
@@ -83,7 +83,6 @@
     }
   }
 
-  /* Логотип SVG */
   &__logo {
     display: flex;
     align-items: center;
@@ -117,24 +116,23 @@
     }
   }
 
-  /* Навігація */
   &__nav {
     position: fixed;
-    top: 0;
+    top: var(--mobile-menu-top);
     left: 0;
     width: 82%;
     max-width: 340px;
-    height: 100dvh;
+    height: calc(100svh - var(--mobile-menu-top));
     background-color: var(--header-bg);
     border-right: 1px solid rgba(251, 243, 209, 0.25);
-    padding: calc(var(--header-mobile-height) + 28px) 20px 24px;
+    padding: 24px 20px;
     display: flex;
     flex-direction: column;
     gap: 24px;
     overflow-y: auto;
     transform: translateX(-100%);
     transition: transform 0.3s ease;
-    z-index: 120;
+    z-index: 115;
 
     &.is-open {
       transform: translateX(0);
@@ -168,7 +166,6 @@
     }
   }
 
-  /* Посилання меню з жовтою лінією на всю ширину слова */
   &__link {
     display: inline-block;
     width: fit-content;
@@ -209,7 +206,6 @@
     }
   }
 
-  /* Гендерні іконки ♀ / ♂ */
   &__gender {
     display: flex;
     align-items: center;
@@ -258,7 +254,6 @@
     }
   }
 
-  /* Перемикач мови UA / EN */
   &__lang {
     margin-top: auto;
     padding-top: 16px;
@@ -304,19 +299,20 @@
     color: rgba(251, 243, 209, 0.4);
   }
 
-  /* Затемнення фону */
   &__backdrop {
     position: fixed;
-    inset: 0;
+    top: var(--mobile-menu-top);
+    right: 0;
+    bottom: 0;
+    left: 0;
     background-color: rgba(0, 0, 0, 0.35);
-    z-index: 115;
+    z-index: 112;
 
     @media (min-width: 1024px) {
       display: none;
     }
   }
 
-  /* Кошик */
   &__cart {
     position: relative;
     width: 40px;
