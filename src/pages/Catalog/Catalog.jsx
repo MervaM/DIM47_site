@@ -10,6 +10,19 @@ import ProductCard, {
 } from '../../components/ProductCard/ProductCard';
 import './Catalog.scss';
 
+const LINING_CHOICES = [
+  { id: 'fleece', label: 'Байка' },
+  { id: 'fur', label: 'Хутро' },
+  { id: 'teddy', label: 'Теді' },
+];
+
+const getDefaultLiningsByCategory = (category) => {
+  if (category === 'sneakers' || category === 'shoes') {
+    return ['fur', 'teddy'];
+  }
+  return ['fleece', 'fur'];
+};
+
 const buildMaterialLabel = (materials = []) => {
   const hasLeather = materials.includes('leather');
   const hasSuede = materials.includes('suede');
@@ -60,6 +73,7 @@ export default function Catalog() {
     gallery: [],
     sizes: '36, 37, 38, 39, 40, 41',
     availableMaterials: ['leather', 'suede'],
+    availableLinings: ['fleece', 'fur'],
   });
 
   const onlyInStock = searchParams.get('inStock') === 'true';
@@ -149,6 +163,7 @@ export default function Catalog() {
   const openAddModal = () => {
     const defaultMfr = manufacturers.m1;
     const firstSole = defaultMfr?.soles?.[0];
+    const initialCategory = selectedCategory === 'all' ? 'boots' : selectedCategory;
     setEditingProduct(null);
     setForm({
       manufacturerId: 'm1',
@@ -157,12 +172,13 @@ export default function Catalog() {
       titleEn: '',
       materialUa: '',
       materialEn: '',
-      category: selectedCategory === 'all' ? 'boots' : selectedCategory,
+      category: initialCategory,
       gender: gender === 'all' ? 'women' : gender,
       price: '3800',
       gallery: [],
       sizes: (firstSole?.sizes || [36, 37, 38, 39, 40]).join(', '),
       availableMaterials: ['leather', 'suede'],
+      availableLinings: getDefaultLiningsByCategory(initialCategory),
     });
     setIsModalOpen(true);
   };
@@ -172,6 +188,10 @@ export default function Catalog() {
     const activeSole =
       mfr?.soles?.find((s) => s.id === product.soleId) || mfr?.soles?.[0];
     const mats = product.availableMaterials || ['leather', 'suede'];
+    const linings =
+      Array.isArray(product.availableLinings) && product.availableLinings.length > 0
+        ? product.availableLinings
+        : getDefaultLiningsByCategory(product.category);
 
     setEditingProduct(product);
     setForm({
@@ -187,6 +207,7 @@ export default function Catalog() {
       gallery: product.gallery?.length ? product.gallery : [product.image],
       sizes: product.sizes.join(', '),
       availableMaterials: mats,
+      availableLinings: linings,
     });
     setIsModalOpen(true);
   };
@@ -209,6 +230,16 @@ export default function Catalog() {
       ...prev,
       soleId: newSoleId,
       sizes: sole ? sole.sizes.join(', ') : prev.sizes,
+    }));
+  };
+
+  const handleCategoryChange = (newCategory) => {
+    setForm((prev) => ({
+      ...prev,
+      category: newCategory,
+      availableLinings: editingProduct
+        ? prev.availableLinings
+        : getDefaultLiningsByCategory(newCategory),
     }));
   };
 
@@ -253,6 +284,21 @@ export default function Catalog() {
     });
   };
 
+  const toggleLiningOption = (liningId) => {
+    setForm((prev) => {
+      const current = prev.availableLinings || [];
+      const exists = current.includes(liningId);
+      if (exists && current.length === 1) return prev;
+      const nextLinings = exists
+        ? current.filter((l) => l !== liningId)
+        : [...current, liningId];
+      return {
+        ...prev,
+        availableLinings: nextLinings,
+      };
+    });
+  };
+
   const applyAutoMaterialText = () => {
     const generated = buildMaterialLabel(form.availableMaterials);
     setForm((prev) => ({
@@ -285,6 +331,11 @@ export default function Catalog() {
     const cleanMaterialUa = form.materialUa.trim();
     const cleanMaterialEn = form.materialEn.trim() || cleanMaterialUa;
 
+    const cleanLinings =
+      Array.isArray(form.availableLinings) && form.availableLinings.length > 0
+        ? form.availableLinings
+        : ['fleece', 'fur'];
+
     const payload = {
       manufacturerId: form.manufacturerId,
       soleId: form.soleId,
@@ -297,6 +348,7 @@ export default function Catalog() {
       gallery: form.gallery,
       sizes: parsedSizes.length ? parsedSizes : [36, 37, 38, 39, 40],
       availableMaterials: form.availableMaterials,
+      availableLinings: cleanLinings,
       inStock: editingProduct ? editingProduct.inStock : false,
     };
 
@@ -582,7 +634,7 @@ export default function Catalog() {
 
             <select
               value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
+              onChange={(e) => handleCategoryChange(e.target.value)}
               style={{
                 width: '100%',
                 padding: '10px',
@@ -739,6 +791,49 @@ export default function Catalog() {
                   fontSize: '13px',
                 }}
               />
+            </div>
+
+            <div
+              style={{
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '10px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  color: '#1e293b',
+                }}
+              >
+                Наповнення / утеплення (які варіанти підключити):
+              </span>
+              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '13px' }}>
+                {LINING_CHOICES.map((lining) => (
+                  <label
+                    key={lining.id}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={(form.availableLinings || []).includes(lining.id)}
+                      onChange={() => toggleLiningOption(lining.id)}
+                    />
+                    {lining.label}
+                  </label>
+                ))}
+              </div>
             </div>
 
             <input

@@ -9,9 +9,10 @@ const MATERIAL_OPTIONS = {
   suede: { ua: 'Замша', en: 'Suede' },
 };
 
-const LINING_OPTIONS = [
+const ALL_LINING_OPTIONS = [
   { id: 'fleece', label: { ua: 'Байка', en: 'Fleece' } },
   { id: 'fur', label: { ua: 'Хутро', en: 'Fur' } },
+  { id: 'teddy', label: { ua: 'Теді', en: 'Teddy' } },
 ];
 
 const INSOLE_CM_BY_SIZE = {
@@ -62,6 +63,15 @@ export default function Product() {
     return Array.isArray(product?.availableMaterials) && product.availableMaterials.length > 0
       ? product.availableMaterials
       : ['leather', 'suede'];
+  }, [product]);
+
+  const liningOptions = useMemo(() => {
+    const allowedIds =
+      Array.isArray(product?.availableLinings) && product.availableLinings.length > 0
+        ? product.availableLinings
+        : ['fleece', 'fur'];
+    const filtered = ALL_LINING_OPTIONS.filter((opt) => allowedIds.includes(opt.id));
+    return filtered.length > 0 ? filtered : ALL_LINING_OPTIONS.slice(0, 2);
   }, [product]);
 
   const [selectedMaterial, setSelectedMaterial] = useState('leather');
@@ -134,11 +144,16 @@ export default function Product() {
     setActivePhotoIdx(0);
     const firstMat = availableMaterials[0] || 'leather';
     setSelectedMaterial(firstMat);
-    setSelectedLining('fleece');
     setShowMoreColors(false);
     setIsSizeChartOpen(false);
     setAddedNotice(false);
   }, [product?.id, availableMaterials]);
+
+  useEffect(() => {
+    setSelectedLining((prev) =>
+      liningOptions.some((opt) => opt.id === prev) ? prev : liningOptions[0]?.id || 'fleece'
+    );
+  }, [liningOptions]);
 
   useEffect(() => {
     const preferredPool = basicColors.length > 0 ? basicColors : paletteColors;
@@ -221,7 +236,7 @@ export default function Product() {
   const chosenSolePreviewImage = chosenSoleColorObj?.image || sole?.image || '';
 
   const chosenLiningObj =
-    LINING_OPTIONS.find((l) => l.id === selectedLining) || LINING_OPTIONS[0];
+    liningOptions.find((l) => l.id === selectedLining) || liningOptions[0];
 
   const chosenSizeObj = sizesList.find((s) => s.value === selectedSize);
   const chosenInsoleCm = chosenSizeObj?.insoleCm ?? getInsoleCm(selectedSize);
@@ -485,36 +500,38 @@ export default function Product() {
             </div>
           </div>
 
-          {/* 2. Утеплення: Байка / Хутро */}
-          <div>
-            <div style={labelStyle}>
-              {lang === 'ua' ? 'Утеплення:' : 'Lining:'}
+          {/* 2. Утеплення: підключені варіанти з каталогу */}
+          {liningOptions.length > 0 && (
+            <div>
+              <div style={labelStyle}>
+                {lang === 'ua' ? 'Утеплення:' : 'Lining:'}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {liningOptions.map((opt) => {
+                  const active = selectedLining === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setSelectedLining(opt.id)}
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: '10px',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        border: active ? '1.5px solid #8cbff0' : '1px solid #cbd5e1',
+                        backgroundColor: active ? '#eef6ff' : '#fff',
+                        color: active ? '#1e3a5f' : '#334155',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {opt.label[lang] || opt.label.ua}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {LINING_OPTIONS.map((opt) => {
-                const active = selectedLining === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setSelectedLining(opt.id)}
-                    style={{
-                      padding: '8px 16px',
-                      borderRadius: '10px',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      border: active ? '1.5px solid #8cbff0' : '1px solid #cbd5e1',
-                      backgroundColor: active ? '#eef6ff' : '#fff',
-                      color: active ? '#1e3a5f' : '#334155',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {opt.label[lang] || opt.label.ua}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          )}
 
           {/* 3. Колір: базові + «Більше кольорів» */}
           {paletteColors.length > 0 && (
