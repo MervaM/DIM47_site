@@ -8,7 +8,19 @@ export const CATALOG_SCROLL_KEY = 'dim47_catalog_scroll';
 
 export default function ProductCard({ product, onEdit }) {
   const { lang, t } = useLanguage();
-  const { isAdmin, toggleBlockProduct, deleteProduct } = useAdmin();
+  const { isAdmin, toggleBlockProduct, toggleInStock, deleteProduct } = useAdmin();
+
+  const materialText =
+    product.material?.[lang] ||
+    product.material?.ua ||
+    product.material?.en ||
+    '';
+
+  const titleText =
+    product.title?.[lang] ||
+    product.title?.ua ||
+    product.title?.en ||
+    '';
 
   const handleOpenProduct = () => {
     try {
@@ -21,7 +33,7 @@ export default function ProductCard({ product, onEdit }) {
 
   const handleDelete = () => {
     const confirmed = window.confirm(
-      `Видалити модель «${product.title[lang]}»? Цю дію неможливо скасувати.`
+      `Видалити модель «${titleText}»? Цю дію неможливо скасувати.`
     );
     if (confirmed) {
       deleteProduct(product.id);
@@ -42,21 +54,55 @@ export default function ProductCard({ product, onEdit }) {
         <div className="product-card__media">
           <img
             src={product.image}
-            alt={product.title[lang]}
+            alt={titleText}
             className="product-card__img"
             loading="lazy"
           />
+
+          {product.inStock && (
+            <span
+              style={{
+                position: 'absolute',
+                top: '10px',
+                left: '10px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                backgroundColor: 'rgba(255, 255, 255, 0.94)',
+                color: '#15803d',
+                fontSize: '11px',
+                fontWeight: 700,
+                padding: '4px 10px',
+                borderRadius: '999px',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)',
+                border: '1px solid #bbf7d0',
+              }}
+            >
+              <span
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: '#22c55e',
+                  boxShadow: '0 0 0 2px rgba(34, 197, 94, 0.25)',
+                  flexShrink: 0,
+                }}
+              />
+              {lang === 'ua' ? 'Наявність' : 'In stock'}
+            </span>
+          )}
+
           {isAdmin && product.isBlocked && (
             <span
               style={{
                 position: 'absolute',
-                top: '8px',
-                right: '8px',
+                top: '10px',
+                right: '10px',
                 backgroundColor: '#e84393',
                 color: '#fff',
                 fontSize: '11px',
                 fontWeight: 600,
-                padding: '3px 8px',
+                padding: '4px 8px',
                 borderRadius: '6px',
               }}
             >
@@ -66,8 +112,10 @@ export default function ProductCard({ product, onEdit }) {
         </div>
 
         <div className="product-card__body">
-          <p className="product-card__material">{product.material[lang]}</p>
-          <h3 className="product-card__title">{product.title[lang]}</h3>
+          {materialText && (
+            <p className="product-card__material">{materialText}</p>
+          )}
+          <h3 className="product-card__title">{titleText}</h3>
           <div className="product-card__footer">
             <span className="product-card__price">
               {product.price.toLocaleString('uk-UA')} {t.currency}
@@ -90,6 +138,23 @@ export default function ProductCard({ product, onEdit }) {
             backgroundColor: '#f8fafc',
           }}
         >
+          <button
+            type="button"
+            onClick={() => toggleInStock(product.id)}
+            style={{
+              width: '100%',
+              padding: '5px 8px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: 700,
+              backgroundColor: product.inStock ? '#dcfce7' : '#fff',
+              color: product.inStock ? '#15803d' : '#475569',
+              border: product.inStock ? '1px solid #86efac' : '1px solid #cbd5e1',
+            }}
+          >
+            {product.inStock ? '● В наявності' : '○ Позначити як наявність'}
+          </button>
+
           <button
             type="button"
             onClick={() => toggleBlockProduct(product.id)}

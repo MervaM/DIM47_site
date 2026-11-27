@@ -10,6 +10,34 @@ import ProductCard, {
 } from '../../components/ProductCard/ProductCard';
 import './Catalog.scss';
 
+const buildMaterialLabel = (materials = []) => {
+  const hasLeather = materials.includes('leather');
+  const hasSuede = materials.includes('suede');
+
+  if (hasLeather && hasSuede) {
+    return {
+      ua: 'Натуральна шкіра / замша',
+      en: 'Genuine leather / suede',
+    };
+  }
+  if (hasLeather) {
+    return {
+      ua: 'Натуральна шкіра',
+      en: 'Genuine leather',
+    };
+  }
+  if (hasSuede) {
+    return {
+      ua: 'Натуральна замша',
+      en: 'Genuine suede',
+    };
+  }
+  return {
+    ua: 'Натуральна шкіра / замша',
+    en: 'Genuine leather / suede',
+  };
+};
+
 export default function Catalog() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchParams, setSearchParams] = useSearchParams();
@@ -143,20 +171,23 @@ export default function Catalog() {
     const mfr = manufacturers[product.manufacturerId] || manufacturers.m1;
     const activeSole =
       mfr?.soles?.find((s) => s.id === product.soleId) || mfr?.soles?.[0];
+    const mats = product.availableMaterials || ['leather', 'suede'];
+    const fallbackMat = buildMaterialLabel(mats);
+
     setEditingProduct(product);
     setForm({
       manufacturerId: mfr.id,
       soleId: activeSole?.id || '',
-      titleUa: product.title.ua,
-      titleEn: product.title.en,
-      materialUa: product.material.ua,
-      materialEn: product.material.en,
+      titleUa: product.title?.ua || '',
+      titleEn: product.title?.en || '',
+      materialUa: product.material?.ua || fallbackMat.ua,
+      materialEn: product.material?.en || fallbackMat.en,
       category: product.category,
       gender: product.gender || 'unisex',
       price: String(product.price),
       gallery: product.gallery?.length ? product.gallery : [product.image],
       sizes: product.sizes.join(', '),
-      availableMaterials: product.availableMaterials || ['leather', 'suede'],
+      availableMaterials: mats,
     });
     setIsModalOpen(true);
   };
@@ -213,13 +244,23 @@ export default function Catalog() {
     setForm((prev) => {
       const exists = prev.availableMaterials.includes(mat);
       if (exists && prev.availableMaterials.length === 1) return prev;
+      const nextMaterials = exists
+        ? prev.availableMaterials.filter((m) => m !== mat)
+        : [...prev.availableMaterials, mat];
       return {
         ...prev,
-        availableMaterials: exists
-          ? prev.availableMaterials.filter((m) => m !== mat)
-          : [...prev.availableMaterials, mat],
+        availableMaterials: nextMaterials,
       };
     });
+  };
+
+  const applyAutoMaterialText = () => {
+    const generated = buildMaterialLabel(form.availableMaterials);
+    setForm((prev) => ({
+      ...prev,
+      materialUa: generated.ua,
+      materialEn: generated.en,
+    }));
   };
 
   const handleSaveProduct = (e) => {
@@ -234,11 +275,16 @@ export default function Catalog() {
       .map((s) => Number(s.trim()))
       .filter((n) => !Number.isNaN(n) && n > 0);
 
+    const cleanMaterialUa =
+      form.materialUa.trim() || buildMaterialLabel(form.availableMaterials).ua;
+    const cleanMaterialEn =
+      form.materialEn.trim() || buildMaterialLabel(form.availableMaterials).en;
+
     const payload = {
       manufacturerId: form.manufacturerId,
       soleId: form.soleId,
       title: { ua: form.titleUa, en: form.titleEn || form.titleUa },
-      material: { ua: form.materialUa, en: form.materialEn || form.materialUa },
+      material: { ua: cleanMaterialUa, en: cleanMaterialEn },
       category: form.category,
       gender: form.gender,
       price: Number(form.price) || 0,
@@ -588,23 +634,87 @@ export default function Catalog() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '14px', fontSize: '13px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <input
-                  type="checkbox"
-                  checked={form.availableMaterials.includes('leather')}
-                  onChange={() => toggleMaterialOption('leather')}
-                />
-                Шкіра
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <input
-                  type="checkbox"
-                  checked={form.availableMaterials.includes('suede')}
-                  onChange={() => toggleMaterialOption('suede')}
-                />
-                Замша
-              </label>
+            <div
+              style={{
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '10px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div style={{ display: 'flex', gap: '14px', fontSize: '13px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input
+                      type="checkbox"
+                      checked={form.availableMaterials.includes('leather')}
+                      onChange={() => toggleMaterialOption('leather')}
+                    />
+                    Шкіра
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input
+                      type="checkbox"
+                      checked={form.availableMaterials.includes('suede')}
+                      onChange={() => toggleMaterialOption('suede')}
+                    />
+                    Замша
+                  </label>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={applyAutoMaterialText}
+                  style={{
+                    padding: '4px 9px',
+                    borderRadius: '6px',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#fff',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: '#334155',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Підставити з чекбоксів
+                </button>
+              </div>
+
+              <input
+                placeholder="Рядок матеріалу на картці (укр), напр. Натуральна шкіра"
+                value={form.materialUa}
+                onChange={(e) => setForm({ ...form, materialUa: e.target.value })}
+                style={{
+                  padding: '9px 10px',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  backgroundColor: '#fff',
+                  fontSize: '13px',
+                }}
+              />
+              <input
+                placeholder="Material line on card (en), e.g. Genuine leather"
+                value={form.materialEn}
+                onChange={(e) => setForm({ ...form, materialEn: e.target.value })}
+                style={{
+                  padding: '9px 10px',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  backgroundColor: '#fff',
+                  fontSize: '13px',
+                }}
+              />
             </div>
 
             <input

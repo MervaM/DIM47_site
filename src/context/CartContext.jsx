@@ -4,6 +4,18 @@ const CartContext = createContext();
 
 const CART_STORAGE_KEY = 'dim47_cart_items';
 
+const buildCartItemKey = (item) => {
+  if (item?.cartItemKey) return String(item.cartItemKey);
+  return [
+    item?.id ?? '',
+    item?.size ?? '',
+    item?.material ?? '',
+    item?.lining ?? '',
+    item?.colorId ?? '',
+    item?.soleColorId ?? '',
+  ].join('__');
+};
+
 const safeReadCart = () => {
   try {
     const raw = localStorage.getItem(CART_STORAGE_KEY);
@@ -34,21 +46,22 @@ export function CartProvider({ children }) {
   }, [cartItems]);
 
   const addToCart = (newItem) => {
-    if (!newItem || !newItem.cartItemKey) return;
+    if (!newItem || (!newItem.id && !newItem.cartItemKey)) return;
+    const key = buildCartItemKey(newItem);
     const qtyToAdd = Math.max(1, Number(newItem.quantity) || 1);
 
     setCartItems((prev) => {
       const existingIdx = prev.findIndex(
-        (item) => item.cartItemKey === newItem.cartItemKey
+        (item) => buildCartItemKey(item) === key
       );
       if (existingIdx !== -1) {
         return prev.map((item, idx) =>
           idx === existingIdx
-            ? { ...item, quantity: item.quantity + qtyToAdd }
+            ? { ...item, cartItemKey: key, quantity: (item.quantity || 1) + qtyToAdd }
             : item
         );
       }
-      return [...prev, { ...newItem, quantity: qtyToAdd }];
+      return [...prev, { ...newItem, cartItemKey: key, quantity: qtyToAdd }];
     });
   };
 

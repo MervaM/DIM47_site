@@ -60,6 +60,7 @@ export default function Cart() {
         {cartItems.map((item) => {
           const itemTitle = item.title?.[lang] || item.title?.ua || '';
           const colorLabel = item.colorName?.[lang] || item.colorName?.ua || '';
+          const soleColorLabel = item.soleColorName?.[lang] || item.soleColorName?.ua || '';
           const materialLabel = item.materialLabel?.[lang] || item.material || '';
           const liningLabel = item.liningLabel?.[lang] || item.lining || '';
 
@@ -111,7 +112,17 @@ export default function Cart() {
                 </div>
 
                 <p style={{ fontSize: '13px', color: '#475569', marginTop: '4px' }}>
-                  {materialLabel} · {liningLabel} · {colorLabel} · {lang === 'ua' ? 'Розмір' : 'Size'}: {item.size} EU
+                  {[
+                    materialLabel,
+                    liningLabel,
+                    colorLabel,
+                    soleColorLabel
+                      ? `${lang === 'ua' ? 'Підошва' : 'Sole'}: ${soleColorLabel}`
+                      : '',
+                    `${lang === 'ua' ? 'Розмір' : 'Size'}: ${item.size} EU`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </p>
 
                 {item.isNonReturnable && (

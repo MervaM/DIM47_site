@@ -4,11 +4,11 @@ import { useAdmin } from '../../context/AdminContext';
 import { uploadVaultImage } from '../../lib/supabase';
 
 const SOLE_COLOR_PRESETS = [
-  { id: 'sc_black', name: { ua: 'Чорна', en: 'Black' }, hex: '#1a1a1a' },
-  { id: 'sc_milk', name: { ua: 'Молочна', en: 'Milk' }, hex: '#f4efe6' },
-  { id: 'sc_white', name: { ua: 'Біла', en: 'White' }, hex: '#ffffff' },
-  { id: 'sc_caramel', name: { ua: 'Карамель', en: 'Caramel' }, hex: '#b5651d' },
-  { id: 'sc_beige', name: { ua: 'Бежева', en: 'Beige' }, hex: '#d8c3a5' },
+  { id: 'sc_black', name: { ua: 'Повністю чорна', en: 'All black' }, hex: '#141414', image: '' },
+  { id: 'sc_light', name: { ua: 'Світла', en: 'Light' }, hex: '#f3efe6', image: '' },
+  { id: 'sc_dark', name: { ua: 'Темна', en: 'Dark' }, hex: '#3a3532', image: '' },
+  { id: 'sc_caramel', name: { ua: 'Карамель', en: 'Caramel' }, hex: '#b5651d', image: '' },
+  { id: 'sc_beige', name: { ua: 'Бежева', en: 'Beige' }, hex: '#d8c3a5', image: '' },
 ];
 
 export default function Vault() {
@@ -35,6 +35,9 @@ export default function Vault() {
   const [newSoleSizes, setNewSoleSizes] = useState('36, 37, 38, 39, 40, 41');
   const [newSoleImage, setNewSoleImage] = useState('');
   const [newSoleFileName, setNewSoleFileName] = useState('');
+
+  // Стан додавання кастомного кольору всередині конкретної підошви (soleId -> draft)
+  const [customSoleColorDrafts, setCustomSoleColorDrafts] = useState({});
 
   // Стан форми нового кольору шкіри/замші
   const [newNameUa, setNewNameUa] = useState('');
@@ -79,6 +82,19 @@ export default function Vault() {
     });
   }, [currentMfr, activeFolder, searchQuery, onlyStopped]);
 
+  const getDraftForSole = (soleId) =>
+    customSoleColorDrafts[soleId] || { nameUa: '', hex: '#64748b', image: '' };
+
+  const updateDraftForSole = (soleId, patch) => {
+    setCustomSoleColorDrafts((prev) => ({
+      ...prev,
+      [soleId]: {
+        ...getDraftForSole(soleId),
+        ...patch,
+      },
+    }));
+  };
+
   const handleNewSolePhotoChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !currentMfr) return;
@@ -110,15 +126,102 @@ export default function Vault() {
     }
   };
 
-  const handleToggleSoleColor = (sole, preset) => {
+  const handleToggleSolePresetColor = (sole, preset) => {
     if (!currentMfr) return;
     const currentColors = sole.colors?.length ? sole.colors : SOLE_COLOR_PRESETS;
     const exists = currentColors.some((c) => c.id === preset.id);
     if (exists && currentColors.length === 1) return;
     const nextColors = exists
       ? currentColors.filter((c) => c.id !== preset.id)
-      : [...currentColors, preset];
+      : [...currentColors, { ...preset, image: preset.image || sole.image || '' }];
     updateManufacturerSole(currentMfr.id, sole.id, { colors: nextColors });
+  };
+
+  const handleSoleColorVariantPhoto = async (sole, colorId, e) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentMfr) return;
+    setIsUploading(true);
+    try {
+      const url = await uploadVaultImage(
+        file,
+        `${currentMfr.id}/soles/${sole.id}/colors`,
+        480
+      );
+      const baseColors = sole.colors?.length ? sole.colors : SOLE_COLOR_PRESETS;
+      const nextColors = baseColors.map((c) =>
+        c.id === colorId ? { ...c, image: url } : c
+      );
+      updateManufacturerSole(currentMfr.id, sole.id, {
+        colors: nextColors,
+        image: sole.image || url,
+      });
+    } catch {
+      alert('Не вдалося завантажити фото для кольору підошви.');
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveSoleColorVariantPhoto = (sole, colorId) => {
+    if (!currentMfr) return;
+    const baseColors = sole.colors?.length ? sole.colors : SOLE_COLOR_PRESETS;
+    const nextColors = baseColors.map((c) =>
+      c.id === colorId ? { ...c, image: '' } : c
+    );
+    updateManufacturerSole(currentMfr.id, sole.id, { colors: nextColors });
+  };
+
+  const handleDraftColorPhoto = async (soleId, e) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentMfr) return;
+    setIsUploading(true);
+    try {
+      const url = await uploadVaultImage(
+        file,
+        `${currentMfr.id}/soles/${soleId}/colors`,
+        480
+      );
+      const cleanName = file.name
+        .replace(/\.[^/.]+$/, '')
+        .replace(/[-_]+/g, ' ')
+        .trim();
+      const currentDraft = getDraftForSole(soleId);
+      updateDraftForSole(soleId, {
+        image: url,
+        nameUa: currentDraft.nameUa.trim() ? currentDraft.nameUa : cleanName,
+      });
+    } catch {
+      alert('Не вдалося завантажити фото кольору.');
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleAddCustomSoleColor = (sole) => {
+    if (!currentMfr) return;
+    const draft = getDraftForSole(sole.id);
+    const nameUa = draft.nameUa.trim();
+    if (!nameUa) return;
+
+    const baseColors = sole.colors?.length ? sole.colors : SOLE_COLOR_PRESETS;
+    const newVariant = {
+      id: `sc_${Date.now()}`,
+      name: { ua: nameUa, en: nameUa },
+      hex: draft.hex || '#64748b',
+      image: draft.image || '',
+    };
+
+    updateManufacturerSole(currentMfr.id, sole.id, {
+      colors: [...baseColors, newVariant],
+      image: sole.image || draft.image || '',
+    });
+
+    setCustomSoleColorDrafts((prev) => ({
+      ...prev,
+      [sole.id]: { nameUa: '', hex: '#64748b', image: '' },
+    }));
   };
 
   const handleAddSole = (e) => {
@@ -132,7 +235,10 @@ export default function Vault() {
 
     addManufacturerSole(currentMfr.id, newSoleName.trim(), parsedSizes, {
       image: newSoleImage,
-      colors: SOLE_COLOR_PRESETS.slice(0, 4),
+      colors: SOLE_COLOR_PRESETS.slice(0, 3).map((c) => ({
+        ...c,
+        image: newSoleImage || '',
+      })),
     });
     setNewSoleName('');
     setNewSoleSizes('36, 37, 38, 39, 40, 41');
@@ -207,7 +313,6 @@ export default function Vault() {
 
   return (
     <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '24px 16px 60px' }}>
-      {/* Шапка сторінки */}
       <div
         style={{
           display: 'flex',
@@ -223,7 +328,7 @@ export default function Vault() {
             Сховок виробників
           </h1>
           <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-            Окремі папки по цехах, підошвах, розмірних сітках і палітрах шкіри та замші
+            Окремі папки по цехах, підошвах із варіантами кольорів/фото та палітрах шкіри і замші
           </p>
         </div>
 
@@ -290,7 +395,6 @@ export default function Vault() {
         })}
       </div>
 
-      {/* Сітка: Ліва колонка (Папки розділів) + Права колонка (Вміст папки) */}
       <div
         style={{
           display: 'grid',
@@ -393,7 +497,6 @@ export default function Vault() {
             gap: '18px',
           }}
         >
-          {/* Панель пошуку та фільтрування всередині папки */}
           <div
             style={{
               display: 'flex',
@@ -447,10 +550,9 @@ export default function Vault() {
             </label>
           </div>
 
-          {/* ПАПКА 1: ПІДОШВИ ТА СІТКИ */}
           {activeFolder === 'soles' ? (
             <>
-              {/* Форма додавання підошви */}
+              {/* Форма створення базової підошви зі спільною сіткою */}
               <form
                 onSubmit={handleAddSole}
                 style={{
@@ -464,12 +566,12 @@ export default function Vault() {
                 }}
               >
                 <span style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>
-                  + Додати нову підошву в папку «{currentMfr.name}»
+                  + Додати підошву зі спільною розмірною сіткою для {currentMfr.name}
                 </span>
 
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <input
-                    placeholder="Назва підошви (напр. Лофери 36-41)"
+                    placeholder="Назва підошви (напр. Тракторна підошва)"
                     value={newSoleName}
                     onChange={(e) => setNewSoleName(e.target.value)}
                     style={{
@@ -481,7 +583,7 @@ export default function Vault() {
                     }}
                   />
                   <input
-                    placeholder="Розміри: 36, 37, 38..."
+                    placeholder="Спільні розміри: 36, 37, 38..."
                     value={newSoleSizes}
                     onChange={(e) => setNewSoleSizes(e.target.value)}
                     style={{
@@ -506,7 +608,7 @@ export default function Vault() {
                       color: '#2b4c6f',
                     }}
                   >
-                    {newSoleFileName ? `Фото: ${newSoleFileName}` : '+ Фото підошви'}
+                    {newSoleFileName ? `Фото: ${newSoleFileName}` : '+ Загальне фото підошви'}
                     <input
                       type="file"
                       accept="image/*"
@@ -532,7 +634,6 @@ export default function Vault() {
                 </div>
               </form>
 
-              {/* Сітка карток підошов */}
               {filteredSoles.length === 0 ? (
                 <p style={{ textAlign: 'center', color: '#94a3b8', padding: '24px 0', fontSize: '14px' }}>
                   У цій папці за обраним фільтром підошов не знайдено.
@@ -541,12 +642,14 @@ export default function Vault() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
                     gap: '14px',
                   }}
                 >
                   {filteredSoles.map((sole) => {
                     const activeColors = sole.colors?.length ? sole.colors : SOLE_COLOR_PRESETS;
+                    const draft = getDraftForSole(sole.id);
+
                     return (
                       <div
                         key={sole.id}
@@ -623,7 +726,7 @@ export default function Vault() {
                               cursor: 'pointer',
                             }}
                           >
-                            {sole.image ? 'Замінити фото' : '+ Фото підошви'}
+                            {sole.image ? 'Замінити фото підошви' : '+ Фото підошви'}
                             <input
                               type="file"
                               accept="image/*"
@@ -665,27 +768,197 @@ export default function Vault() {
                           </button>
                         </div>
 
-                        <div>
-                          <div style={{ fontSize: '11px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
-                            Доступні кольори підошви:
+                        {/* Варіанти кольорів цієї підошви з окремим фото на кожен варіант */}
+                        <div
+                          style={{
+                            backgroundColor: '#fff',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: '10px',
+                            padding: '10px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                          }}
+                        >
+                          <div style={{ fontSize: '11px', fontWeight: 700, color: '#334155' }}>
+                            Варіанти підошви (колір + своє фото):
                           </div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {activeColors.map((colorVar) => {
+                              const varLabel = colorVar.name?.ua || colorVar.name || '';
+                              return (
+                                <div
+                                  key={colorVar.id}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: '8px',
+                                    padding: '6px 8px',
+                                    borderRadius: '8px',
+                                    border: '1px solid #f1f5f9',
+                                    backgroundColor: '#f8fafc',
+                                    flexWrap: 'wrap',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span
+                                      style={{
+                                        width: '28px',
+                                        height: '24px',
+                                        borderRadius: '6px',
+                                        backgroundColor: colorVar.hex || '#e2e8f0',
+                                        backgroundImage: colorVar.image ? `url(${colorVar.image})` : 'none',
+                                        backgroundSize: 'cover',
+                                        backgroundPosition: 'center',
+                                        border: '1px solid rgba(0,0,0,0.2)',
+                                        flexShrink: 0,
+                                      }}
+                                    />
+                                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#1e293b' }}>
+                                      {varLabel}
+                                    </span>
+                                  </div>
+
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                    <label
+                                      style={{
+                                        padding: '3px 8px',
+                                        borderRadius: '6px',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        border: '1px dashed #8cbff0',
+                                        backgroundColor: '#eef6ff',
+                                        color: '#1e3a5f',
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      {colorVar.image ? 'Фото кольору ✓' : '+ Фото кольору'}
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={(e) => handleSoleColorVariantPhoto(sole, colorVar.id, e)}
+                                        style={{ display: 'none' }}
+                                      />
+                                    </label>
+
+                                    {colorVar.image && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveSoleColorVariantPhoto(sole, colorVar.id)}
+                                        style={{
+                                          padding: '3px 6px',
+                                          borderRadius: '6px',
+                                          fontSize: '10px',
+                                          backgroundColor: '#fee2e2',
+                                          color: '#b91c1c',
+                                          cursor: 'pointer',
+                                        }}
+                                        title="Прибрати фото цього кольору"
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Додати свій колір підошви (наприклад: Світла, Темна, Повністю чорна) + фото */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              gap: '6px',
+                              flexWrap: 'wrap',
+                              alignItems: 'center',
+                              paddingTop: '6px',
+                              borderTop: '1px dashed #e2e8f0',
+                            }}
+                          >
+                            <input
+                              type="color"
+                              value={draft.hex || '#64748b'}
+                              onChange={(e) => updateDraftForSole(sole.id, { hex: e.target.value })}
+                              title="Колір індикатора"
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                padding: 0,
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                backgroundColor: '#fff',
+                                cursor: 'pointer',
+                              }}
+                            />
+                            <input
+                              placeholder="Назва кольору (напр. Світла)"
+                              value={draft.nameUa}
+                              onChange={(e) => updateDraftForSole(sole.id, { nameUa: e.target.value })}
+                              style={{
+                                flex: '1 1 130px',
+                                padding: '6px 8px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                              }}
+                            />
+                            <label
+                              style={{
+                                padding: '6px 8px',
+                                borderRadius: '6px',
+                                border: '1px dashed #8cbff0',
+                                backgroundColor: '#f8fafc',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                color: '#2b4c6f',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {draft.image ? 'Фото обрано ✓' : '+ Фото'}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handleDraftColorPhoto(sole.id, e)}
+                                style={{ display: 'none' }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => handleAddCustomSoleColor(sole)}
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                backgroundColor: '#8cbff0',
+                                color: '#1e3a5f',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              + Колір
+                            </button>
+                          </div>
+
+                          {/* Швидкі пресети */}
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', paddingTop: '4px' }}>
                             {SOLE_COLOR_PRESETS.map((preset) => {
                               const isEnabled = activeColors.some((c) => c.id === preset.id);
                               return (
                                 <button
                                   key={preset.id}
                                   type="button"
-                                  onClick={() => handleToggleSoleColor(sole, preset)}
+                                  onClick={() => handleToggleSolePresetColor(sole, preset)}
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: '5px',
-                                    padding: '4px 9px',
+                                    gap: '4px',
+                                    padding: '2px 7px',
                                     borderRadius: '999px',
-                                    fontSize: '11px',
+                                    fontSize: '10px',
                                     fontWeight: 600,
-                                    border: isEnabled ? '1.5px solid #8cbff0' : '1px solid #cbd5e1',
+                                    border: isEnabled ? '1px solid #8cbff0' : '1px solid #e2e8f0',
                                     backgroundColor: isEnabled ? '#eef6ff' : '#fff',
                                     color: isEnabled ? '#1e3a5f' : '#94a3b8',
                                     cursor: 'pointer',
@@ -693,8 +966,8 @@ export default function Vault() {
                                 >
                                   <span
                                     style={{
-                                      width: '10px',
-                                      height: '10px',
+                                      width: '8px',
+                                      height: '8px',
                                       borderRadius: '50%',
                                       backgroundColor: preset.hex,
                                       border: '1px solid rgba(0,0,0,0.2)',
@@ -707,9 +980,10 @@ export default function Vault() {
                           </div>
                         </div>
 
+                        {/* Спільна розмірна сітка підошви + Стопи */}
                         <div>
                           <div style={{ fontSize: '11px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
-                            Розміри (натисніть, щоб поставити/зняти «Стоп»):
+                            Розміри підошви (клік — «Стоп» для всіх кольорів цієї підошви):
                           </div>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                             {sole.sizes.map((sz) => {

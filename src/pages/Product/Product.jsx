@@ -1,191 +1,154 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAdmin } from '../../context/AdminContext';
 import { useCart } from '../../context/CartContext';
-import './Product.scss';
 
 const MATERIAL_LABELS = {
-  leather: { ua: 'Шкіра', en: 'Leather' },
-  suede: { ua: 'Замша', en: 'Suede' },
+  leather: { ua: 'Натуральна шкіра', en: 'Genuine leather' },
+  suede: { ua: 'Натуральна замша', en: 'Genuine suede' },
 };
 
-const LINING_LABELS = {
-  fleece: { ua: 'Байка', en: 'Fleece' },
-  fur: { ua: 'Хутро', en: 'Fur' },
-  teddy: { ua: 'Тедді', en: 'Teddy' },
-};
-
-const isBootsCategory = (product) => {
-  const cat = String(product?.category || '').toLowerCase();
-  const titleUa = String(product?.title?.ua || '').toLowerCase();
-  const titleEn = String(product?.title?.en || '').toLowerCase();
-
-  return (
-    cat === 'boots' ||
-    cat.includes('черевик') ||
-    titleUa.includes('черевик') ||
-    titleEn.includes('boot')
-  );
-};
-
-const compressImageFile = (file, maxWidth = 600, quality = 0.68) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const scale = img.width > maxWidth ? maxWidth / img.width : 1;
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(img.width * scale));
-        canvas.height = Math.max(1, Math.round(img.height * scale));
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = reject;
-      img.src = event.target.result;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+const LINING_OPTIONS = [
+  { id: 'fleece', label: { ua: 'Байка', en: 'Fleece' } },
+  { id: 'fur', label: { ua: 'Натуральне хутро / цигейка', en: 'Natural fur / shearling' } },
+  { id: 'leather_lining', label: { ua: 'Шкірпідклад', en: 'Leather lining' } },
+];
 
 export default function Product() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { lang, t } = useLanguage();
-  const {
-    isAdmin,
-    items,
-    manufacturers,
-    toggleInStock,
-    toggleBlockSize,
-    toggleProductColorBlock,
-    updateProduct,
-  } = useAdmin();
+  const { items, manufacturers } = useAdmin();
   const { addToCart } = useCart();
 
-  const product = items.find((item) => item.id === id);
+  const product = useMemo(
+    () => items.find((item) => String(item.id) === String(id)) || null,
+    [items, id]
+  );
+
+  const gallery = useMemo(() => {
+    if (!product) return [];
+    if (Array.isArray(product.gallery) && product.gallery.length > 0) {
+      return product.gallery;
+    }
+    return product.image ? [product.image] : [];
+  }, [product]);
 
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
-  const [colorPreviewPhoto, setColorPreviewPhoto] = useState('');
+
+  const availableMaterials = useMemo(() => {
+    return Array.isArray(product?.availableMaterials) && product.availableMaterials.length > 0
+      ? product.availableMaterials
+      : ['leather', 'suede'];
+  }, [product]);
+
   const [selectedMaterial, setSelectedMaterial] = useState('leather');
-  const [selectedLining, setSelectedLining] = useState(null);
-  const [showMoreColors, setShowMoreColors] = useState(false);
-  const [selectedColorId, setSelectedColorId] = useState(null);
+  const [selectedLining, setSelectedLining] = useState('fleece');
+  const [selectedColorId, setSelectedColorId] = useState('');
+  const [selectedSoleColorId, setSelectedSoleColorId] = useState('');
   const [selectedSize, setSelectedSize] = useState(null);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [addedToast, setAddedToast] = useState(false);
-  const [isColorPhotosOpen, setIsColorPhotosOpen] = useState(false);
+  const [addedNotice, setAddedNotice] = useState(false);
 
-  const photoTouchStartXRef = useRef(null);
-  const photoTouchEndXRef = useRef(null);
+  const manufacturer = useMemo(() => {
+    if (!product) return null;
+    return manufacturers?.[product.manufacturerId] || manufacturers?.m1 || null;
+  }, [product, manufacturers]);
 
-  const pageTouchStartRef = useRef(null);
-  const pageTouchCurrentRef = useRef(null);
+  const sole = useMemo(() => {
+    if (!manufacturer || !product) return null;
+    return (
+      manufacturer.soles?.find((s) => s.id === product.soleId) ||
+      manufacturer.soles?.[0] ||
+      null
+    );
+  }, [manufacturer, product]);
 
-  const mfr = manufacturers[product?.manufacturerId] || manufacturers.m1;
-  const activeSole = mfr?.soles?.find((s) => s.id === product?.soleId) || mfr?.soles?.[0];
-  const soleBlockedSizes = activeSole?.blockedSizes || [];
+  const soleColors = useMemo(() => {
+    if (!sole) return [];
+    return Array.isArray(sole.colors) ? sole.colors : [];
+  }, [sole]);
 
-  const availableMaterials = product?.availableMaterials || ['leather', 'suede'];
+  const paletteColors = useMemo(() => {
+    const rawList = manufacturer?.palettes?.[selectedMaterial] || [];
+    const blockedOnProduct = new Set(product?.blockedColorIds || []);
+    return rawList.map((color) => ({
+      ...color,
+      isUnavailable: Boolean(color.isBlocked) || blockedOnProduct.has(color.id),
+    }));
+  }, [manufacturer, selectedMaterial, product]);
 
-  const isBootModel = Boolean(product && isBootsCategory(product));
-  const isAutoFurPair = Boolean(product?.autoFur);
+  const sizesList = useMemo(() => {
+    const baseSizes =
+      Array.isArray(product?.sizes) && product.sizes.length > 0
+        ? product.sizes
+        : sole?.sizes || [36, 37, 38, 39, 40];
 
-  const liningMode = useMemo(() => {
-    if (!product) return 'none';
-    if (isAutoFurPair) return 'fur_or_teddy';
-    if (isBootModel) return 'fleece_or_fur';
-    return 'none';
-  }, [product, isAutoFurPair, isBootModel]);
+    const blockedSet = new Set([
+      ...(product?.blockedSizes || []),
+      ...(sole?.blockedSizes || []),
+    ]);
 
-  const allowedLiningOptions = useMemo(() => {
-    if (liningMode === 'fur_or_teddy') {
-      const saved = product?.furOptions || ['fur', 'teddy'];
-      return saved.filter((opt) => opt === 'fur' || opt === 'teddy');
-    }
-    if (liningMode === 'fleece_or_fur') {
-      const saved = product?.availableLinings || ['fleece', 'fur'];
-      return saved.filter((opt) => opt === 'fleece' || opt === 'fur');
-    }
-    return [];
-  }, [liningMode, product?.furOptions, product?.availableLinings]);
-
-  const paletteColors = mfr?.palettes?.[selectedMaterial] || [];
-  const standardColors = paletteColors.filter((c) => !c.isNonReturnable);
-  const extraNonReturnableColors = paletteColors.filter((c) => c.isNonReturnable);
-
-  const blockedSizes = product?.blockedSizes || [];
-  const blockedColorIds = product?.blockedColorIds || [];
-  const colorPhotosMap = product?.colorPhotos || {};
-
-  const gallery = product?.gallery?.length
-    ? product.gallery
-    : product?.image
-    ? [product.image]
-    : [];
+    return baseSizes.map((sz) => ({
+      value: sz,
+      isBlocked: blockedSet.has(sz),
+    }));
+  }, [product, sole]);
 
   useEffect(() => {
-    const scrollToTop = () => {
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    };
-
-    scrollToTop();
-    const rafId = requestAnimationFrame(scrollToTop);
-    const timerId = window.setTimeout(scrollToTop, 60);
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      window.clearTimeout(timerId);
-    };
-  }, [id]);
-
-  useEffect(() => {
-    if (!product) return;
     setActivePhotoIdx(0);
-    setColorPreviewPhoto('');
-    setShowMoreColors(false);
     const firstMat = availableMaterials[0] || 'leather';
     setSelectedMaterial(firstMat);
-
-    if (liningMode === 'fur_or_teddy') {
-      const opts = (product?.furOptions || ['fur', 'teddy']).filter(
-        (x) => x === 'fur' || x === 'teddy'
-      );
-      setSelectedLining(opts[0] || 'fur');
-    } else if (liningMode === 'fleece_or_fur') {
-      const opts = (product?.availableLinings || ['fleece', 'fur']).filter(
-        (x) => x === 'fleece' || x === 'fur'
-      );
-      setSelectedLining(opts[0] || 'fleece');
-    } else {
-      setSelectedLining(null);
-    }
-  }, [product?.id, liningMode]);
+    setSelectedLining(product?.availableLinings?.[0] || 'fleece');
+    setAddedNotice(false);
+  }, [product?.id, availableMaterials, product?.availableLinings]);
 
   useEffect(() => {
-    setShowMoreColors(false);
-    setColorPreviewPhoto('');
-    const firstValidColor = paletteColors.find(
-      (c) => !c.isBlocked && !blockedColorIds.includes(c.id)
-    );
-    const nextId = firstValidColor ? firstValidColor.id : null;
-    setSelectedColorId(nextId);
-    if (nextId && colorPhotosMap[nextId]) {
-      setColorPreviewPhoto(colorPhotosMap[nextId]);
+    const firstAvailableColor = paletteColors.find((c) => !c.isUnavailable);
+    if (firstAvailableColor) {
+      setSelectedColorId((prev) =>
+        paletteColors.some((c) => c.id === prev && !c.isUnavailable)
+          ? prev
+          : firstAvailableColor.id
+      );
+    } else {
+      setSelectedColorId(paletteColors[0]?.id || '');
     }
-  }, [selectedMaterial, product?.id, mfr?.id]);
+  }, [paletteColors]);
 
-  const handleGoBackToCatalog = () => {
-    navigate('/catalog');
-  };
+  useEffect(() => {
+    if (!soleColors.length) {
+      setSelectedSoleColorId('');
+      return;
+    }
+    setSelectedSoleColorId((prev) =>
+      soleColors.some((sc) => sc.id === prev) ? prev : soleColors[0].id
+    );
+  }, [soleColors]);
 
-  if (!product || (!isAdmin && product.isBlocked)) {
+  useEffect(() => {
+    const firstAvailableSize = sizesList.find((s) => !s.isBlocked);
+    if (firstAvailableSize) {
+      setSelectedSize((prev) =>
+        sizesList.some((s) => s.value === prev && !s.isBlocked)
+          ? prev
+          : firstAvailableSize.value
+      );
+    } else {
+      setSelectedSize(sizesList[0]?.value ?? null);
+    }
+  }, [sizesList]);
+
+  if (!product) {
     return (
-      <section className="container" style={{ paddingBlock: '64px', textAlign: 'center' }}>
-        <p style={{ marginBottom: '16px', fontSize: '18px' }}>
-          {lang === 'ua' ? 'Модель не знайдена або тимчасово недоступна.' : 'Product not found.'}
+      <section style={{ padding: '48px 16px', maxWidth: '720px', margin: '0 auto', textAlign: 'center' }}>
+        <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '12px' }}>
+          {lang === 'ua' ? 'Модель не знайдено' : 'Product not found'}
+        </h1>
+        <p style={{ color: '#64748b', marginBottom: '20px' }}>
+          {lang === 'ua'
+            ? 'Можливо, цю позицію було видалено або змінено посилання.'
+            : 'This item may have been removed or the link has changed.'}
         </p>
         <Link
           to="/catalog"
@@ -196,6 +159,7 @@ export default function Product() {
             backgroundColor: '#8cbff0',
             color: '#fbf3d1',
             fontWeight: 600,
+            textDecoration: 'none',
           }}
         >
           {lang === 'ua' ? 'Повернутися в каталог' : 'Back to catalog'}
@@ -204,893 +168,525 @@ export default function Product() {
     );
   }
 
-  const activeColor = paletteColors.find((c) => c.id === selectedColorId);
-  const mainDisplayPhoto =
-    colorPreviewPhoto || gallery[activePhotoIdx] || product.image;
+  const titleText = product.title?.[lang] || product.title?.ua || product.title?.en || '';
+  const cardMaterialText =
+    product.material?.[lang] || product.material?.ua || product.material?.en || '';
 
-  const handleSlideBy = (delta) => {
-    if (gallery.length <= 1) return;
-    setColorPreviewPhoto('');
-    setActivePhotoIdx((prev) => {
-      const current = colorPreviewPhoto ? 0 : prev;
-      return (current + delta + gallery.length) % gallery.length;
-    });
-  };
+  const chosenColorObj =
+    paletteColors.find((c) => c.id === selectedColorId) || paletteColors[0] || null;
 
-  const handlePhotoTouchStart = (e) => {
-    if (gallery.length <= 1) return;
-    photoTouchStartXRef.current = e.touches[0]?.clientX ?? null;
-    photoTouchEndXRef.current = null;
-  };
+  const chosenSoleColorObj =
+    soleColors.find((sc) => sc.id === selectedSoleColorId) || soleColors[0] || null;
 
-  const handlePhotoTouchMove = (e) => {
-    if (gallery.length <= 1) return;
-    photoTouchEndXRef.current = e.touches[0]?.clientX ?? null;
-  };
+  const chosenSolePreviewImage = chosenSoleColorObj?.image || sole?.image || '';
 
-  const handlePhotoTouchEnd = () => {
-    if (
-      gallery.length <= 1 ||
-      photoTouchStartXRef.current === null ||
-      photoTouchEndXRef.current === null
-    ) {
-      photoTouchStartXRef.current = null;
-      photoTouchEndXRef.current = null;
-      return;
-    }
+  const chosenMaterialLabel =
+    MATERIAL_LABELS[selectedMaterial]?.[lang] ||
+    MATERIAL_LABELS[selectedMaterial]?.ua ||
+    cardMaterialText;
 
-    const diffX = photoTouchStartXRef.current - photoTouchEndXRef.current;
-    if (Math.abs(diffX) >= 40) {
-      handleSlideBy(diffX > 0 ? 1 : -1);
-    }
+  const chosenLiningObj =
+    LINING_OPTIONS.find((l) => l.id === selectedLining) || LINING_OPTIONS[0];
 
-    photoTouchStartXRef.current = null;
-    photoTouchEndXRef.current = null;
-  };
-
-  const handlePageTouchStart = (e) => {
-    const touch = e.touches[0];
-    if (!touch) return;
-    pageTouchStartRef.current = { x: touch.clientX, y: touch.clientY };
-    pageTouchCurrentRef.current = { x: touch.clientX, y: touch.clientY };
-  };
-
-  const handlePageTouchMove = (e) => {
-    const touch = e.touches[0];
-    if (!touch || !pageTouchStartRef.current) return;
-    pageTouchCurrentRef.current = { x: touch.clientX, y: touch.clientY };
-  };
-
-  const handlePageTouchEnd = () => {
-    if (!pageTouchStartRef.current || !pageTouchCurrentRef.current) {
-      pageTouchStartRef.current = null;
-      pageTouchCurrentRef.current = null;
-      return;
-    }
-
-    const deltaX = pageTouchCurrentRef.current.x - pageTouchStartRef.current.x;
-    const deltaY = Math.abs(pageTouchCurrentRef.current.y - pageTouchStartRef.current.y);
-
-    if (deltaX >= 80 && deltaX > deltaY * 1.4) {
-      handleGoBackToCatalog();
-    }
-
-    pageTouchStartRef.current = null;
-    pageTouchCurrentRef.current = null;
-  };
-
-  const handleSelectColor = (color) => {
-    if (color.isNonReturnable) {
-      setShowMoreColors(true);
-    }
-    setSelectedColorId(color.id);
-    setErrorMsg('');
-
-    const mappedPhoto = colorPhotosMap[color.id];
-    setColorPreviewPhoto(mappedPhoto || '');
-  };
-
-  const handleAssignColorPhoto = async (colorId, e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const compressed = await compressImageFile(file);
-      const nextMap = {
-        ...colorPhotosMap,
-        [colorId]: compressed,
-      };
-      updateProduct(product.id, { colorPhotos: nextMap });
-      if (selectedColorId === colorId) {
-        setColorPreviewPhoto(compressed);
-      }
-    } catch {
-      alert('Не вдалося привʼязати фото до кольору.');
-    } finally {
-      e.target.value = '';
-    }
-  };
-
-  const handleRemoveColorPhoto = (colorId) => {
-    const nextMap = { ...colorPhotosMap };
-    delete nextMap[colorId];
-    updateProduct(product.id, { colorPhotos: nextMap });
-    if (selectedColorId === colorId) {
-      setColorPreviewPhoto('');
-    }
-  };
-
-  const renderColorSwatch = (color) => {
-    const isColorBlocked = color.isBlocked || blockedColorIds.includes(color.id);
-    return (
-      <button
-        key={color.id}
-        type="button"
-        disabled={isColorBlocked}
-        title={color.name[lang]}
-        onClick={() => handleSelectColor(color)}
-        className={`product-page__color-btn ${
-          selectedColorId === color.id ? 'is-selected' : ''
-        } ${isColorBlocked ? 'is-blocked' : ''}`}
-      >
-        <span
-          className="product-page__color-circle"
-          style={{
-            backgroundColor: color.hex || '#e2e8f0',
-            backgroundImage: color.imageUrl ? `url(${color.imageUrl})` : 'none',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-          }}
-        />
-      </button>
-    );
-  };
-
-  const handleAddGalleryPhoto = async (e) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    const compressed = await Promise.all(files.map((f) => compressImageFile(f)));
-    const updatedGallery = [...gallery, ...compressed];
-    updateProduct(product.id, {
-      image: updatedGallery[0],
-      gallery: updatedGallery,
-    });
-  };
-
-  const handleRemovePhoto = (idxToRemove) => {
-    if (gallery.length <= 1) return;
-    const updatedGallery = gallery.filter((_, idx) => idx !== idxToRemove);
-    updateProduct(product.id, {
-      image: updatedGallery[0],
-      gallery: updatedGallery,
-    });
-    setActivePhotoIdx(0);
-    setColorPreviewPhoto('');
-  };
-
-  const handleChangeProductManufacturer = (newMfrId) => {
-    const nextMfr = manufacturers[newMfrId];
-    const firstSole = nextMfr?.soles?.[0];
-    updateProduct(product.id, {
-      manufacturerId: newMfrId,
-      soleId: firstSole?.id || '',
-      sizes: firstSole ? firstSole.sizes : product.sizes,
-      blockedSizes: [],
-      blockedColorIds: [],
-    });
-  };
-
-  const handleChangeProductSole = (newSoleId) => {
-    const nextSole = mfr?.soles?.find((s) => s.id === newSoleId);
-    updateProduct(product.id, {
-      soleId: newSoleId,
-      sizes: nextSole ? nextSole.sizes : product.sizes,
-      blockedSizes: [],
-    });
-  };
-
-  const toggleLiningOptionForProduct = (optionKey) => {
-    if (liningMode === 'fur_or_teddy') {
-      const current = product?.furOptions || ['fur', 'teddy'];
-      const exists = current.includes(optionKey);
-      if (exists && current.length === 1) return;
-      const updated = exists
-        ? current.filter((item) => item !== optionKey)
-        : [...current, optionKey];
-      updateProduct(product.id, { furOptions: updated });
-      if (!updated.includes(selectedLining)) {
-        setSelectedLining(updated[0]);
-      }
-      return;
-    }
-
-    if (liningMode === 'fleece_or_fur') {
-      const current = product?.availableLinings || ['fleece', 'fur'];
-      const exists = current.includes(optionKey);
-      if (exists && current.length === 1) return;
-      const updated = exists
-        ? current.filter((item) => item !== optionKey)
-        : [...current, optionKey];
-      updateProduct(product.id, { availableLinings: updated });
-      if (!updated.includes(selectedLining)) {
-        setSelectedLining(updated[0]);
-      }
-    }
-  };
-
-  const toggleAutoFurForProduct = () => {
-    const nextAutoFur = !isAutoFurPair;
-    updateProduct(product.id, {
-      autoFur: nextAutoFur,
-      furOptions: product?.furOptions || ['fur', 'teddy'],
-    });
-  };
+  const chosenSizeObj = sizesList.find((s) => s.value === selectedSize);
+  const canAddToCart =
+    Boolean(selectedSize) &&
+    !chosenSizeObj?.isBlocked &&
+    (!chosenColorObj || !chosenColorObj.isUnavailable);
 
   const handleAddToCart = () => {
-    if (!selectedColorId || !activeColor) {
-      setErrorMsg(lang === 'ua' ? 'Оберіть доступний колір' : 'Select an available color');
-      return;
-    }
-    if (!selectedSize) {
-      setErrorMsg(lang === 'ua' ? 'Будь ласка, оберіть розмір' : 'Please select a size');
-      return;
-    }
+    if (!canAddToCart || !addToCart) return;
 
-    const effectiveLining =
-      liningMode === 'none'
-        ? null
-        : selectedLining || allowedLiningOptions[0] || 'fur';
+    const soleColorNameObj =
+      typeof chosenSoleColorObj?.name === 'object'
+        ? chosenSoleColorObj.name
+        : { ua: chosenSoleColorObj?.name || '', en: chosenSoleColorObj?.name || '' };
 
-    const cartItemPayload = {
-      cartItemKey: `${product.id}__${selectedMaterial}__${effectiveLining || 'standard'}__${activeColor.id}__${selectedSize}`,
-      productId: product.id,
-      manufacturerId: mfr.id,
-      manufacturerName: mfr.name,
+    const soleColorIdValue = chosenSoleColorObj?.id || '';
+    const colorIdValue = chosenColorObj?.id || '';
+
+    const cartItemKey = [
+      product.id,
+      selectedSize,
+      selectedMaterial,
+      selectedLining,
+      colorIdValue,
+      soleColorIdValue,
+    ].join('__');
+
+    addToCart({
+      cartItemKey,
+      id: product.id,
       title: product.title,
-      price: product.price,
-      image: mainDisplayPhoto,
-      colorSwatchUrl: activeColor.imageUrl || '',
-      material: selectedMaterial,
-      materialLabel: MATERIAL_LABELS[selectedMaterial] || { ua: selectedMaterial, en: selectedMaterial },
-      lining: effectiveLining,
-      liningLabel: effectiveLining
-        ? LINING_LABELS[effectiveLining] || { ua: effectiveLining, en: effectiveLining }
-        : null,
-      colorId: activeColor.id,
-      colorName: activeColor.name,
-      isNonReturnable: Boolean(activeColor.isNonReturnable),
+      price: Number(product.price) || 0,
+      image: gallery[activePhotoIdx] || product.image || '',
       size: selectedSize,
+      material: selectedMaterial,
+      materialLabel: MATERIAL_LABELS[selectedMaterial] || {
+        ua: cardMaterialText,
+        en: cardMaterialText,
+      },
+      lining: selectedLining,
+      liningLabel: chosenLiningObj?.label,
+      colorId: colorIdValue,
+      colorName: chosenColorObj?.name || { ua: '', en: '' },
+      soleId: sole?.id || '',
+      soleName: sole?.name || '',
+      soleColorId: soleColorIdValue,
+      soleColorName: soleColorNameObj,
+      isNonReturnable: Boolean(chosenColorObj?.isNonReturnable),
       quantity: 1,
-    };
+    });
 
-    addToCart(cartItemPayload);
-
-    setErrorMsg('');
-    setAddedToast(true);
-    setTimeout(() => setAddedToast(false), 2500);
+    setAddedNotice(true);
   };
 
-  const attachedCountInPalette = paletteColors.filter((c) => colorPhotosMap[c.id]).length;
-
   return (
-    <section
-      className="product-page"
-      onTouchStart={handlePageTouchStart}
-      onTouchMove={handlePageTouchMove}
-      onTouchEnd={handlePageTouchEnd}
-    >
-      <div className="container">
-        <button
-          type="button"
-          onClick={handleGoBackToCatalog}
-          className="product-page__back"
+    <section style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px 16px 64px' }}>
+      <div style={{ marginBottom: '16px' }}>
+        <Link
+          to="/catalog"
+          style={{ fontSize: '13px', fontWeight: 600, color: '#475569', textDecoration: 'none' }}
         >
-          ← {lang === 'ua' ? 'Назад' : 'Back'}
-        </button>
+          ← {lang === 'ua' ? 'Назад до каталогу' : 'Back to catalog'}
+        </Link>
+      </div>
 
-        <div className="product-page__grid">
-          <div className="product-page__gallery">
-            <div
-              className="product-page__media"
-              onTouchStart={handlePhotoTouchStart}
-              onTouchMove={handlePhotoTouchMove}
-              onTouchEnd={handlePhotoTouchEnd}
-            >
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(310px, 1fr))',
+          gap: '28px',
+          alignItems: 'start',
+        }}
+      >
+        {/* Галерея фото */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div
+            style={{
+              position: 'relative',
+              width: '100%',
+              aspectRatio: '4 / 5',
+              borderRadius: '16px',
+              overflow: 'hidden',
+              backgroundColor: '#f4f4f5',
+              border: '1px solid #e2e8f0',
+            }}
+          >
+            {gallery[activePhotoIdx] ? (
               <img
-                src={mainDisplayPhoto}
-                alt={product.title[lang]}
-                className="product-page__img"
+                src={gallery[activePhotoIdx]}
+                alt={titleText}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
               />
+            ) : null}
 
-              {gallery.length > 1 && (
-                <>
-                  <button
-                    type="button"
-                    aria-label={lang === 'ua' ? 'Попереднє фото' : 'Previous photo'}
-                    onClick={() => handleSlideBy(-1)}
-                    className="product-page__slider-btn product-page__slider-btn--prev"
-                  >
-                    ‹
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={lang === 'ua' ? 'Наступне фото' : 'Next photo'}
-                    onClick={() => handleSlideBy(1)}
-                    className="product-page__slider-btn product-page__slider-btn--next"
-                  >
-                    ›
-                  </button>
-                </>
-              )}
-            </div>
-
-            <div className="product-page__thumbs">
-              {gallery.map((photoUrl, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => {
-                    setColorPreviewPhoto('');
-                    setActivePhotoIdx(idx);
+            {product.inStock && (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: '12px',
+                  left: '12px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.94)',
+                  color: '#15803d',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  padding: '5px 12px',
+                  borderRadius: '999px',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)',
+                  border: '1px solid #bbf7d0',
+                }}
+              >
+                <span
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    backgroundColor: '#22c55e',
+                    boxShadow: '0 0 0 2px rgba(34, 197, 94, 0.25)',
+                    flexShrink: 0,
                   }}
-                  className={`product-page__thumb ${
-                    !colorPreviewPhoto && activePhotoIdx === idx ? 'is-active' : ''
-                  }`}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <img src={photoUrl} alt={`${product.title[lang]} ${idx + 1}`} />
-                  {isAdmin && gallery.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemovePhoto(idx);
-                      }}
-                      style={{
-                        position: 'absolute',
-                        top: '2px',
-                        right: '2px',
-                        width: '18px',
-                        height: '18px',
-                        borderRadius: '50%',
-                        backgroundColor: 'rgba(239,68,68,0.9)',
-                        color: '#fff',
-                        fontSize: '11px',
-                        lineHeight: 1,
-                      }}
-                      title="Видалити фото"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-              ))}
+                />
+                {lang === 'ua' ? 'Наявність' : 'In stock'}
+              </span>
+            )}
+          </div>
 
-              {isAdmin && (
-                <label className="product-page__thumb-add" title="Додати фото">
-                  +
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleAddGalleryPhoto}
-                    style={{ display: 'none' }}
+          {gallery.length > 1 && (
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {gallery.map((imgUrl, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setActivePhotoIdx(idx)}
+                  style={{
+                    width: '64px',
+                    height: '76px',
+                    borderRadius: '10px',
+                    overflow: 'hidden',
+                    padding: 0,
+                    border: activePhotoIdx === idx ? '2px solid #8cbff0' : '1px solid #cbd5e1',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <img
+                    src={imgUrl}
+                    alt={`${titleText} ${idx + 1}`}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                   />
-                </label>
-              )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Інформація та вибір опцій */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          <div>
+            {cardMaterialText && (
+              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>
+                {cardMaterialText}
+              </p>
+            )}
+            <h1 style={{ fontSize: '28px', fontWeight: 800, color: '#1e293b', margin: 0 }}>
+              {titleText}
+            </h1>
+            <div style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b', marginTop: '10px' }}>
+              {(Number(product.price) || 0).toLocaleString('uk-UA')} {t.currency}
             </div>
           </div>
 
-          <div className="product-page__info">
+          {/* Матеріал верху */}
+          <div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>
+              {lang === 'ua' ? 'Матеріал верху:' : 'Upper material:'}{' '}
+              <span style={{ fontWeight: 500, color: '#64748b' }}>{chosenMaterialLabel}</span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {availableMaterials.map((matKey) => {
+                const label =
+                  MATERIAL_LABELS[matKey]?.[lang] ||
+                  MATERIAL_LABELS[matKey]?.ua ||
+                  matKey;
+                const active = selectedMaterial === matKey;
+                return (
+                  <button
+                    key={matKey}
+                    type="button"
+                    onClick={() => setSelectedMaterial(matKey)}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '10px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      border: active ? '1.5px solid #8cbff0' : '1px solid #cbd5e1',
+                      backgroundColor: active ? '#eef6ff' : '#fff',
+                      color: active ? '#1e3a5f' : '#334155',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Колір верху з палітри виробника */}
+          {paletteColors.length > 0 && (
             <div>
-              <h1 className="product-page__title">{product.title[lang]}</h1>
-              <p className="product-page__price">
-                {product.price.toLocaleString('uk-UA')} {t.currency}
-              </p>
-            </div>
-
-            <div className="product-page__section">
-              <div className="product-page__materials">
-                {availableMaterials.includes('leather') && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedMaterial('leather')}
-                    className={`product-page__material-btn ${
-                      selectedMaterial === 'leather' ? 'is-active' : ''
-                    }`}
-                  >
-                    {lang === 'ua' ? 'Шкіра' : 'Leather'}
-                  </button>
-                )}
-                {availableMaterials.includes('suede') && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedMaterial('suede')}
-                    className={`product-page__material-btn ${
-                      selectedMaterial === 'suede' ? 'is-active' : ''
-                    }`}
-                  >
-                    {lang === 'ua' ? 'Замша' : 'Suede'}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {liningMode !== 'none' && allowedLiningOptions.length > 0 && (
-              <div className="product-page__section">
-                <div className="product-page__materials">
-                  {allowedLiningOptions.map((optKey) => (
-                    <button
-                      key={optKey}
-                      type="button"
-                      onClick={() => setSelectedLining(optKey)}
-                      className={`product-page__material-btn ${
-                        selectedLining === optKey ? 'is-active' : ''
-                      }`}
-                    >
-                      {LINING_LABELS[optKey]?.[lang] || optKey}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="product-page__section">
-              <div className="product-page__label">
-                <span>{lang === 'ua' ? 'Колір' : 'Color'}</span>
-                <span className="product-page__label-value">
-                  {activeColor?.name?.[lang] || ''}
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>
+                {lang === 'ua' ? 'Колір верху:' : 'Upper color:'}{' '}
+                <span style={{ fontWeight: 500, color: '#64748b' }}>
+                  {chosenColorObj?.name?.[lang] || chosenColorObj?.name?.ua || ''}
                 </span>
               </div>
-
-              <div className="product-page__colors" style={{ alignItems: 'center' }}>
-                {standardColors.map(renderColorSwatch)}
-
-                {extraNonReturnableColors.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowMoreColors((prev) => !prev)}
-                    className={`product-page__more-colors-btn ${
-                      showMoreColors ? 'is-open' : ''
-                    }`}
-                  >
-                    {showMoreColors
-                      ? lang === 'ua'
-                        ? 'Згорнути'
-                        : 'Hide'
-                      : lang === 'ua'
-                      ? 'Більше кольорів'
-                      : 'More colors'}
-                  </button>
-                )}
-              </div>
-
-              {showMoreColors && extraNonReturnableColors.length > 0 && (
-                <div className="product-page__extra-colors">
-                  <span className="product-page__extra-colors-title">
-                    {lang === 'ua'
-                      ? 'Без обміну і повернення'
-                      : 'Non-returnable & non-exchangeable'}
-                  </span>
-                  <div className="product-page__colors">
-                    {extraNonReturnableColors.map(renderColorSwatch)}
-                  </div>
-                </div>
-              )}
-
-              {activeColor?.isNonReturnable && (
-                <p
-                  style={{
-                    fontSize: '12px',
-                    color: '#b45309',
-                    backgroundColor: '#fef3c7',
-                    padding: '8px 10px',
-                    borderRadius: '8px',
-                    fontWeight: 500,
-                  }}
-                >
-                  {lang === 'ua'
-                    ? 'Обраний колір виготовляється під замовлення — без обміну та повернення.'
-                    : 'This color is made to order — non-returnable and non-exchangeable.'}
-                </p>
-              )}
-            </div>
-
-            <div className="product-page__section">
-              <div className="product-page__label">
-                <span>{lang === 'ua' ? 'Розмір' : 'Size'}</span>
-                {selectedSize && (
-                  <span className="product-page__label-value">{selectedSize} EU</span>
-                )}
-              </div>
-
-              <div className="product-page__sizes">
-                {product.sizes.map((size) => {
-                  const isBlocked =
-                    blockedSizes.includes(size) || soleBlockedSizes.includes(size);
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {paletteColors.map((color) => {
+                  const isSelected = chosenColorObj?.id === color.id;
+                  const label = color.name?.[lang] || color.name?.ua || '';
                   return (
                     <button
-                      key={size}
+                      key={color.id}
                       type="button"
-                      disabled={isBlocked}
-                      onClick={() => {
-                        setSelectedSize(size);
-                        setErrorMsg('');
+                      disabled={color.isUnavailable}
+                      onClick={() => setSelectedColorId(color.id)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '7px',
+                        padding: '7px 12px',
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        border: isSelected ? '1.5px solid #8cbff0' : '1px solid #cbd5e1',
+                        backgroundColor: color.isUnavailable
+                          ? '#f1f5f9'
+                          : isSelected
+                          ? '#eef6ff'
+                          : '#fff',
+                        color: color.isUnavailable ? '#94a3b8' : '#1e293b',
+                        opacity: color.isUnavailable ? 0.55 : 1,
+                        cursor: color.isUnavailable ? 'not-allowed' : 'pointer',
                       }}
-                      className={`product-page__size-btn ${
-                        selectedSize === size ? 'is-selected' : ''
-                      } ${isBlocked ? 'is-blocked' : ''}`}
                     >
-                      {size}
+                      <span
+                        style={{
+                          width: '14px',
+                          height: '14px',
+                          borderRadius: '50%',
+                          backgroundColor: color.hex || '#e2e8f0',
+                          backgroundImage: color.imageUrl ? `url(${color.imageUrl})` : 'none',
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center',
+                          border: '1px solid rgba(0,0,0,0.2)',
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span>{label}</span>
+                      {color.isUnavailable && (
+                        <span style={{ fontSize: '10px', color: '#b91c1c' }}>
+                          ({lang === 'ua' ? 'стоп' : 'stop'})
+                        </span>
+                      )}
                     </button>
                   );
                 })}
               </div>
-            </div>
 
-            {errorMsg && <p className="product-page__error">{errorMsg}</p>}
-
-            <div className="product-page__actions">
-              <button
-                type="button"
-                className="product-page__buy-btn"
-                onClick={handleAddToCart}
-              >
-                {addedToast
-                  ? lang === 'ua'
-                    ? '✓ Додано в кошик'
-                    : '✓ Added to cart'
-                  : lang === 'ua'
-                  ? 'Додати в кошик'
-                  : 'Add to cart'}
-              </button>
-
-              <Link to="/constructor" className="product-page__custom-link">
-                {lang === 'ua'
-                  ? 'Зібрати інший колір у Конструкторі'
-                  : 'Customize in Constructor'}
-              </Link>
-            </div>
-
-            {isAdmin && (
-              <div className="product-page__admin-box">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>
-                    Налаштування пари (Адмін)
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => toggleInStock(product.id)}
-                    style={{
-                      padding: '5px 10px',
-                      borderRadius: '6px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      backgroundColor: product.inStock ? '#8cbff0' : '#e2e8f0',
-                      color: product.inStock ? '#1e3a5f' : '#475569',
-                    }}
-                  >
-                    {product.inStock ? '✓ Є в наявності' : 'Немає в наявності'}
-                  </button>
-                </div>
-
-                <div
+              {chosenColorObj?.isNonReturnable && (
+                <p
                   style={{
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '10px',
-                    backgroundColor: '#fff',
-                    padding: '10px 12px',
+                    marginTop: '8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: '#b45309',
+                    backgroundColor: '#fef3c7',
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    display: 'inline-block',
                   }}
                 >
-                  <button
-                    type="button"
-                    onClick={() => setIsColorPhotosOpen((prev) => !prev)}
+                  {lang === 'ua'
+                    ? 'Обраний колір — без обміну і повернення'
+                    : 'Selected color is non-returnable & non-exchangeable'}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Варіант / колір підошви + фото зі сховку виробників */}
+          {soleColors.length > 0 && (
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>
+                {lang === 'ua' ? 'Колір підошви:' : 'Sole color:'}{' '}
+                <span style={{ fontWeight: 500, color: '#64748b' }}>
+                  {chosenSoleColorObj?.name?.[lang] ||
+                    chosenSoleColorObj?.name?.ua ||
+                    chosenSoleColorObj?.name ||
+                    ''}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {soleColors.map((sc) => {
+                  const isSelected = chosenSoleColorObj?.id === sc.id;
+                  const label = sc.name?.[lang] || sc.name?.ua || sc.name || '';
+                  return (
+                    <button
+                      key={sc.id}
+                      type="button"
+                      onClick={() => setSelectedSoleColorId(sc.id)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '7px',
+                        padding: '7px 12px',
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        border: isSelected ? '1.5px solid #8cbff0' : '1px solid #cbd5e1',
+                        backgroundColor: isSelected ? '#eef6ff' : '#fff',
+                        color: '#1e293b',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '16px',
+                          height: '16px',
+                          borderRadius: '4px',
+                          backgroundColor: sc.hex || '#e2e8f0',
+                          backgroundImage: sc.image ? `url(${sc.image})` : 'none',
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center',
+                          border: '1px solid rgba(0,0,0,0.2)',
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span>{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {chosenSolePreviewImage && (
+                <div
+                  style={{
+                    marginTop: '10px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 10px',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    backgroundColor: '#f8fafc',
+                  }}
+                >
+                  <img
+                    src={chosenSolePreviewImage}
+                    alt={sole?.name || 'Підошва'}
                     style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '8px',
+                      width: '64px',
+                      height: '48px',
+                      objectFit: 'contain',
+                      borderRadius: '6px',
+                      backgroundColor: '#fff',
+                      border: '1px solid #cbd5e1',
+                    }}
+                  />
+                  <div style={{ fontSize: '12px', color: '#475569' }}>
+                    <div style={{ fontWeight: 700, color: '#1e293b' }}>
+                      {sole?.name || (lang === 'ua' ? 'Підошва' : 'Sole')}
+                    </div>
+                    <div>
+                      {chosenSoleColorObj?.name?.[lang] ||
+                        chosenSoleColorObj?.name?.ua ||
+                        chosenSoleColorObj?.name ||
+                        ''}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Утеплювач / підкладка */}
+          <div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>
+              {lang === 'ua' ? 'Підкладка / утеплення:' : 'Lining:'}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {LINING_OPTIONS.map((opt) => {
+                const active = selectedLining === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setSelectedLining(opt.id)}
+                    style={{
+                      padding: '7px 12px',
+                      borderRadius: '10px',
                       fontSize: '12px',
-                      fontWeight: 700,
-                      color: '#1e293b',
+                      fontWeight: 600,
+                      border: active ? '1.5px solid #8cbff0' : '1px solid #cbd5e1',
+                      backgroundColor: active ? '#eef6ff' : '#fff',
+                      color: active ? '#1e3a5f' : '#334155',
                       cursor: 'pointer',
                     }}
                   >
-                    <span>
-                      📁 Фото пари по кольорах ({selectedMaterial === 'leather' ? 'Шкіра' : 'Замша'}) — привʼязано: {attachedCountInPalette}/{paletteColors.length}
-                    </span>
-                    <span style={{ fontSize: '11px', color: '#2b4c6f' }}>
-                      {isColorPhotosOpen ? 'Сховати ▲' : 'Відкрити ▼'}
-                    </span>
+                    {opt.label[lang] || opt.label.ua}
                   </button>
+                );
+              })}
+            </div>
+          </div>
 
-                  {isColorPhotosOpen && (
-                    <div
-                      style={{
-                        marginTop: '10px',
-                        paddingTop: '10px',
-                        borderTop: '1px solid #e2e8f0',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px',
-                      }}
-                    >
-                      {paletteColors.map((c) => {
-                        const attachedPhoto = colorPhotosMap[c.id];
-                        return (
-                          <div
-                            key={c.id}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: '8px',
-                              padding: '6px 8px',
-                              borderRadius: '8px',
-                              backgroundColor: '#f8fafc',
-                              border: '1px solid #e2e8f0',
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                              <span
-                                style={{
-                                  width: '28px',
-                                  height: '28px',
-                                  borderRadius: '6px',
-                                  backgroundColor: '#e2e8f0',
-                                  backgroundImage: attachedPhoto
-                                    ? `url(${attachedPhoto})`
-                                    : c.imageUrl
-                                    ? `url(${c.imageUrl})`
-                                    : 'none',
-                                  backgroundSize: 'cover',
-                                  backgroundPosition: 'center',
-                                  border: '1px solid #cbd5e1',
-                                  flexShrink: 0,
-                                }}
-                              />
-                              <span
-                                style={{
-                                  fontSize: '12px',
-                                  fontWeight: 600,
-                                  color: '#334155',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {c.name.ua}
-                              </span>
-                            </div>
-
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                              <label
-                                style={{
-                                  padding: '4px 9px',
-                                  borderRadius: '6px',
-                                  border: '1px dashed #8cbff0',
-                                  backgroundColor: '#eef6ff',
-                                  color: '#1e3a5f',
-                                  fontSize: '11px',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                {attachedPhoto ? 'Замінити фото' : '+ Фото пари'}
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  onChange={(e) => handleAssignColorPhoto(c.id, e)}
-                                  style={{ display: 'none' }}
-                                />
-                              </label>
-
-                              {attachedPhoto && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveColorPhoto(c.id)}
-                                  style={{
-                                    padding: '4px 7px',
-                                    borderRadius: '6px',
-                                    backgroundColor: '#fee2e2',
-                                    color: '#b91c1c',
-                                    fontSize: '11px',
-                                    fontWeight: 700,
-                                  }}
-                                  title="Прибрати фото для цього кольору"
-                                >
-                                  ×
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <div style={{ flex: 1, minWidth: '160px' }}>
-                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>
-                      Виробник:
-                    </label>
-                    <select
-                      value={mfr.id}
-                      onChange={(e) => handleChangeProductManufacturer(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '7px 8px',
-                        borderRadius: '8px',
-                        border: '1px solid #cbd5e1',
-                        backgroundColor: '#fff',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {Object.values(manufacturers).map((itemMfr) => (
-                        <option key={itemMfr.id} value={itemMfr.id}>
-                          {itemMfr.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div style={{ flex: 1, minWidth: '160px' }}>
-                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>
-                      Підошва (розміри):
-                    </label>
-                    <select
-                      value={activeSole?.id || ''}
-                      onChange={(e) => handleChangeProductSole(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '7px 8px',
-                        borderRadius: '8px',
-                        border: '1px solid #cbd5e1',
-                        backgroundColor: '#fff',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {(mfr.soles || []).map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <div
+          {/* Розмір */}
+          <div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>
+              {lang === 'ua' ? 'Розмір:' : 'Size:'}{' '}
+              <span style={{ fontWeight: 500, color: '#64748b' }}>
+                {selectedSize ? `${selectedSize} EU` : '—'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {sizesList.map((szObj) => {
+                const isSelected = selectedSize === szObj.value && !szObj.isBlocked;
+                return (
+                  <button
+                    key={szObj.value}
+                    type="button"
+                    disabled={szObj.isBlocked}
+                    onClick={() => setSelectedSize(szObj.value)}
                     style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: '8px',
-                      marginBottom: '6px',
-                      flexWrap: 'wrap',
+                      minWidth: '44px',
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      border: isSelected ? '1.5px solid #8cbff0' : '1px solid #cbd5e1',
+                      backgroundColor: szObj.isBlocked
+                        ? '#fee2e2'
+                        : isSelected
+                        ? '#8cbff0'
+                        : '#fff',
+                      color: szObj.isBlocked
+                        ? '#b91c1c'
+                        : isSelected
+                        ? '#fbf3d1'
+                        : '#1e293b',
+                      textDecoration: szObj.isBlocked ? 'line-through' : 'none',
+                      cursor: szObj.isBlocked ? 'not-allowed' : 'pointer',
                     }}
                   >
-                    <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
-                      {liningMode === 'fur_or_teddy'
-                        ? 'Пара з хутром — яке хутро активне / заблоковане:'
-                        : liningMode === 'fleece_or_fur'
-                        ? 'Черевики — доступні варіанти для цієї пари:'
-                        : 'Утеплювач для пари:'}
-                    </p>
+                    {szObj.value}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-                    {!isBootModel && (
-                      <button
-                        type="button"
-                        onClick={toggleAutoFurForProduct}
-                        style={{
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          border: '1px solid #cbd5e1',
-                          backgroundColor: isAutoFurPair ? '#fef3c7' : '#fff',
-                          color: isAutoFurPair ? '#92400e' : '#475569',
-                        }}
-                      >
-                        {isAutoFurPair ? '✓ Йде з хутром (Хутро / Тедді)' : '+ Зробити парою з хутром'}
-                      </button>
-                    )}
-                  </div>
+          {/* Додати в кошик */}
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', paddingTop: '6px' }}>
+            <button
+              type="button"
+              disabled={!canAddToCart}
+              onClick={handleAddToCart}
+              style={{
+                flex: '1 1 200px',
+                padding: '12px 20px',
+                borderRadius: '12px',
+                backgroundColor: canAddToCart ? '#8cbff0' : '#cbd5e1',
+                color: '#fbf3d1',
+                fontWeight: 700,
+                fontSize: '14px',
+                cursor: canAddToCart ? 'pointer' : 'not-allowed',
+              }}
+            >
+              {lang === 'ua' ? 'Додати в кошик' : 'Add to cart'}
+            </button>
 
-                  {liningMode === 'fur_or_teddy' && (
-                    <div className="product-page__admin-chips">
-                      {['fur', 'teddy'].map((furKey) => {
-                        const isActive = (product?.furOptions || ['fur', 'teddy']).includes(furKey);
-                        return (
-                          <button
-                            key={furKey}
-                            type="button"
-                            onClick={() => toggleLiningOptionForProduct(furKey)}
-                            className={`product-page__admin-chip ${!isActive ? 'is-blocked' : ''}`}
-                            title={
-                              isActive
-                                ? 'Натисни, щоб заблокувати для цієї пари'
-                                : 'Натисни, щоб активувати для цієї пари'
-                            }
-                          >
-                            {LINING_LABELS[furKey]?.ua} {isActive ? '(активне)' : '(стоп)'}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {liningMode === 'fleece_or_fur' && (
-                    <div className="product-page__admin-chips">
-                      {['fleece', 'fur'].map((linKey) => {
-                        const isActive = (product?.availableLinings || ['fleece', 'fur']).includes(linKey);
-                        return (
-                          <button
-                            key={linKey}
-                            type="button"
-                            onClick={() => toggleLiningOptionForProduct(linKey)}
-                            className={`product-page__admin-chip ${!isActive ? 'is-blocked' : ''}`}
-                          >
-                            {LINING_LABELS[linKey]?.ua}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {liningMode === 'none' && (
-                    <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0 }}>
-                      Для цієї категорії вибір байки/хутра на вітрині вимкнено (активуй «Йде з хутром», якщо модель хутряна).
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>
-                    Стоп на розміри для цієї пари:
-                  </p>
-                  <div className="product-page__admin-chips">
-                    {product.sizes.map((size) => {
-                      const isBlocked =
-                        blockedSizes.includes(size) || soleBlockedSizes.includes(size);
-                      return (
-                        <button
-                          key={size}
-                          type="button"
-                          onClick={() => toggleBlockSize(product.id, size)}
-                          className={`product-page__admin-chip ${isBlocked ? 'is-blocked' : ''}`}
-                        >
-                          {size}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div>
-                  <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>
-                    Стоп на кольори ({selectedMaterial === 'leather' ? 'Шкіра' : 'Замша'}) для цієї пари:
-                  </p>
-                  <div className="product-page__admin-chips">
-                    {paletteColors.map((c) => {
-                      const isBlocked = c.isBlocked || blockedColorIds.includes(c.id);
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => toggleProductColorBlock(product.id, c.id)}
-                          className={`product-page__admin-chip ${isBlocked ? 'is-blocked' : ''}`}
-                        >
-                          {c.name.ua}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
+            {addedNotice && (
+              <button
+                type="button"
+                onClick={() => navigate('/cart')}
+                style={{
+                  padding: '12px 18px',
+                  borderRadius: '12px',
+                  border: '1px solid #8cbff0',
+                  backgroundColor: '#eef6ff',
+                  color: '#1e3a5f',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                }}
+              >
+                {lang === 'ua' ? 'Перейти в кошик →' : 'Go to cart →'}
+              </button>
             )}
           </div>
         </div>
