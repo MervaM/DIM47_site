@@ -16,25 +16,25 @@ const buildMaterialLabel = (materials = []) => {
 
   if (hasLeather && hasSuede) {
     return {
-      ua: 'Натуральна шкіра / замша',
-      en: 'Genuine leather / suede',
+      ua: 'Шкіра / замша',
+      en: 'Leather / suede',
     };
   }
   if (hasLeather) {
     return {
-      ua: 'Натуральна шкіра',
-      en: 'Genuine leather',
+      ua: 'Шкіра',
+      en: 'Leather',
     };
   }
   if (hasSuede) {
     return {
-      ua: 'Натуральна замша',
-      en: 'Genuine suede',
+      ua: 'Замша',
+      en: 'Suede',
     };
   }
   return {
-    ua: 'Натуральна шкіра / замша',
-    en: 'Genuine leather / suede',
+    ua: '',
+    en: '',
   };
 };
 
@@ -52,8 +52,8 @@ export default function Catalog() {
     soleId: 'sole_m1_1',
     titleUa: '',
     titleEn: '',
-    materialUa: 'Натуральна шкіра / замша',
-    materialEn: 'Genuine leather / suede',
+    materialUa: '',
+    materialEn: '',
     category: 'boots',
     gender: 'women',
     price: '',
@@ -155,8 +155,8 @@ export default function Catalog() {
       soleId: firstSole?.id || '',
       titleUa: '',
       titleEn: '',
-      materialUa: 'Натуральна шкіра / замша',
-      materialEn: 'Genuine leather / suede',
+      materialUa: '',
+      materialEn: '',
       category: selectedCategory === 'all' ? 'boots' : selectedCategory,
       gender: gender === 'all' ? 'women' : gender,
       price: '3800',
@@ -172,7 +172,6 @@ export default function Catalog() {
     const activeSole =
       mfr?.soles?.find((s) => s.id === product.soleId) || mfr?.soles?.[0];
     const mats = product.availableMaterials || ['leather', 'suede'];
-    const fallbackMat = buildMaterialLabel(mats);
 
     setEditingProduct(product);
     setForm({
@@ -180,8 +179,8 @@ export default function Catalog() {
       soleId: activeSole?.id || '',
       titleUa: product.title?.ua || '',
       titleEn: product.title?.en || '',
-      materialUa: product.material?.ua || fallbackMat.ua,
-      materialEn: product.material?.en || fallbackMat.en,
+      materialUa: product.material?.ua ?? '',
+      materialEn: product.material?.en ?? '',
       category: product.category,
       gender: product.gender || 'unisex',
       price: String(product.price),
@@ -263,6 +262,14 @@ export default function Catalog() {
     }));
   };
 
+  const clearMaterialText = () => {
+    setForm((prev) => ({
+      ...prev,
+      materialUa: '',
+      materialEn: '',
+    }));
+  };
+
   const handleSaveProduct = (e) => {
     e.preventDefault();
     if (!form.gallery.length) {
@@ -275,10 +282,8 @@ export default function Catalog() {
       .map((s) => Number(s.trim()))
       .filter((n) => !Number.isNaN(n) && n > 0);
 
-    const cleanMaterialUa =
-      form.materialUa.trim() || buildMaterialLabel(form.availableMaterials).ua;
-    const cleanMaterialEn =
-      form.materialEn.trim() || buildMaterialLabel(form.availableMaterials).en;
+    const cleanMaterialUa = form.materialUa.trim();
+    const cleanMaterialEn = form.materialEn.trim() || cleanMaterialUa;
 
     const payload = {
       manufacturerId: form.manufacturerId,
@@ -673,26 +678,45 @@ export default function Catalog() {
                   </label>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={applyAutoMaterialText}
-                  style={{
-                    padding: '4px 9px',
-                    borderRadius: '6px',
-                    border: '1px solid #cbd5e1',
-                    backgroundColor: '#fff',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: '#334155',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Підставити з чекбоксів
-                </button>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={applyAutoMaterialText}
+                    style={{
+                      padding: '4px 9px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      backgroundColor: '#fff',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: '#334155',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Підставити з чекбоксів
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={clearMaterialText}
+                    style={{
+                      padding: '4px 9px',
+                      borderRadius: '6px',
+                      border: '1px solid #fecaca',
+                      backgroundColor: '#fef2f2',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: '#b91c1c',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Очистити
+                  </button>
+                </div>
               </div>
 
               <input
-                placeholder="Рядок матеріалу на картці (укр), напр. Натуральна шкіра"
+                placeholder="Рядок матеріалу на картці (укр), напр. Шкіра / замша"
                 value={form.materialUa}
                 onChange={(e) => setForm({ ...form, materialUa: e.target.value })}
                 style={{
@@ -704,7 +728,7 @@ export default function Catalog() {
                 }}
               />
               <input
-                placeholder="Material line on card (en), e.g. Genuine leather"
+                placeholder="Material line on card (en), e.g. Leather / suede"
                 value={form.materialEn}
                 onChange={(e) => setForm({ ...form, materialEn: e.target.value })}
                 style={{
